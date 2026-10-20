@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "becarios-de-notch",
+	"version": "${version}",
+	"name": "Becarios de Notch",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/becarios-de-notch/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.jorgesox.becarios.BecariosDeNotch"
+		],
+		"client": [
+			"com.jorgesox.becarios.client.BecariosDeNotchClient"
+		]
+	},
+	"mixins": [
+		"becarios-de-notch.mixins.json",
+		{
+			"config": "becarios-de-notch.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
