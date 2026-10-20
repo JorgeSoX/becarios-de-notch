@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.pathfinder.Node;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
@@ -228,12 +229,28 @@ public class BlockMiningGoal extends Goal {
 				break;
 			}
 			Path path = becario.getNavigation().createPath(pos, 1);
-			if (path != null && path.canReach()) {
+			if (isUsablePath(path, pos)) {
 				return pos;
 			}
 			ignore(level, pos);
 		}
 		return null;
+	}
+
+	/**
+	 * Un bloque sólido nunca es "alcanzable" como casilla, así que canReach()
+	 * suele ser false aunque se pueda llegar a su lado. Vale cualquier ruta cuyo
+	 * último nodo quede a distancia de brazo del bloque.
+	 */
+	private boolean isUsablePath(Path path, BlockPos pos) {
+		if (path == null) {
+			return false;
+		}
+		if (path.canReach()) {
+			return true;
+		}
+		Node end = path.getEndNode();
+		return end != null && end.asBlockPos().distSqr(pos) <= 3.5 * 3.5;
 	}
 
 	/** No rompe el suelo que pisa ni bloques pegados a agua/lava (evita inundaciones y caídas). */
