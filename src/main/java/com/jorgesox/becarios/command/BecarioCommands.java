@@ -5,6 +5,9 @@ import java.util.List;
 import com.jorgesox.becarios.BecarioSkins;
 import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.entity.ModEntities;
+import com.jorgesox.becarios.task.BecarioTask;
+import com.jorgesox.becarios.task.BlockGroups;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
@@ -25,6 +28,8 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  *
  *   /becario invocar <nombre> <skin>
  *   /becario sigue | quieto | ven | despedir
+ *   /becario mina <objetivo> [cantidad]   (tala = alias de mina madera)
+ *   /becario tala [cantidad] | recoge | para | dame | inventario | estado
  */
 public final class BecarioCommands {
 	private static final int MAX_NAME_LENGTH = 16;
@@ -47,6 +52,24 @@ public final class BecarioCommands {
 				.then(Commands.literal("quieto").executes(ctx -> stay(ctx.getSource())))
 				.then(Commands.literal("ven").executes(ctx -> come(ctx.getSource())))
 				.then(Commands.literal("despedir").executes(ctx -> dismiss(ctx.getSource())))
+				.then(Commands.literal("mina")
+					.then(Commands.argument("objetivo", StringArgumentType.word())
+						.suggests((ctx, builder) -> SharedSuggestionProvider.suggest(BlockGroups.names(), builder))
+						.executes(ctx -> mine(ctx.getSource(), StringArgumentType.getString(ctx, "objetivo"), 16))
+						.then(Commands.argument("cantidad", IntegerArgumentType.integer(1, 256))
+							.executes(ctx -> mine(
+								ctx.getSource(),
+								StringArgumentType.getString(ctx, "objetivo"),
+								IntegerArgumentType.getInteger(ctx, "cantidad"))))))
+				.then(Commands.literal("tala")
+					.executes(ctx -> mine(ctx.getSource(), "madera", 16))
+					.then(Commands.argument("cantidad", IntegerArgumentType.integer(1, 256))
+						.executes(ctx -> mine(ctx.getSource(), "madera", IntegerArgumentType.getInteger(ctx, "cantidad")))))
+				.then(Commands.literal("recoge").executes(ctx -> collect(ctx.getSource())))
+				.then(Commands.literal("para").executes(ctx -> stopTask(ctx.getSource())))
+				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
+				.then(Commands.literal("inventario").executes(ctx -> inventory(ctx.getSource())))
+				.then(Commands.literal("estado").executes(ctx -> status(ctx.getSource())))
 			));
 	}
 
@@ -103,6 +126,7 @@ public final class BecarioCommands {
 		if (becario == null) {
 			return 0;
 		}
+		becario.cancelTask();
 		becario.setOrderedToSit(false);
 		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": te sigo."), false);
 		return 1;
@@ -123,6 +147,7 @@ public final class BecarioCommands {
 		if (becario == null) {
 			return 0;
 		}
+		becario.cancelTask();
 		becario.setOrderedToSit(false);
 		becario.tryToTeleportToOwner();
 		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": voy."), false);
@@ -135,8 +160,76 @@ public final class BecarioCommands {
 			return 0;
 		}
 		String name = becario.getName().getString();
+		int returned = becario.giveAllTo(source.getPlayerOrException());
 		becario.discard();
-		source.sendSuccess(() -> Component.literal(name + " ha sido despedido."), false);
+		source.sendSuccess(() -> Component.literal(name + " ha sido despedido"
+			+ (returned > 0 ? " (te devuelve " + returned + " objetos)." : ".")), false);
+		return 1;
+	}
+
+	private static int mine(CommandSourceStack source, String target, int amount) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		BlockGroups.Group group = BlockGroups.get(target.toLowerCase());
+		if (group == null) {
+			source.sendFailure(Component.literal("Objetivo desconocido. Disponibles: " + String.join(", ", BlockGroups.names())));
+			return 0;
+		}
+		becario.startTask(BecarioTask.mine(group.label(), group.test(), amount));
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": a por " + amount + " de " + group.label() + "."), false);
+		return 1;
+	}
+
+	private static int collect(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		becario.startTask(BecarioTask.collect());
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": recojo lo que hay por el suelo."), false);
+		return 1;
+	}
+
+	private static int stopTask(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		becario.cancelTask();
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": parado."), false);
+		return 1;
+	}
+
+	private static int giveAll(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		int total = becario.giveAllTo(source.getPlayerOrException());
+		source.sendSuccess(() -> Component.literal(becario.getName().getString()
+			+ (total > 0 ? ": te doy " + total + " objetos." : ": no llevo nada.")), false);
+		return 1;
+	}
+
+	private static int inventory(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": " + becario.inventorySummary()), false);
+		return 1;
+	}
+
+	private static int status(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		BecarioTask task = becario.getTask();
+		String what = task != null ? task.describe() : (becario.isOrderedToSit() ? "quieto" : "siguiéndote");
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": " + what + "."), false);
 		return 1;
 	}
 
