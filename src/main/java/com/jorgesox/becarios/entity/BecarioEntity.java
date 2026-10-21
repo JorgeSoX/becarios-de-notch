@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.jorgesox.becarios.BecarioSkins;
 import com.jorgesox.becarios.task.BecarioTask;
@@ -25,6 +26,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.AgeableMob;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.TamableAnimal;
@@ -235,8 +238,41 @@ public class BecarioEntity extends TamableAnimal {
 		return text.append(".");
 	}
 
+	/** Las 4 piezas de armadura que puede llevar puestas. */
+	private static final EquipmentSlot[] ARMOR_SLOTS = {
+		EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+	};
+
+	/** Suelta al suelo TODO: inventario, mano y armadura (al morir o retirarse). */
+	private void dropEverything(ServerLevel level) {
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			ItemStack stack = this.inventory.removeItemNoUpdate(slot);
+			if (!stack.isEmpty()) {
+				this.spawnAtLocation(level, stack);
+			}
+		}
+		for (EquipmentSlot slot : allWornSlots()) {
+			ItemStack stack = this.getItemBySlot(slot);
+			if (!stack.isEmpty()) {
+				this.spawnAtLocation(level, stack.copy());
+				this.setItemSlot(slot, ItemStack.EMPTY);
+			}
+		}
+	}
+
+	private static EquipmentSlot[] allWornSlots() {
+		return new EquipmentSlot[] {
+			EquipmentSlot.MAINHAND, EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+		};
+	}
+
 	/** Entrega al jugador todo el inventario y lo que lleva en la mano. Devuelve cuántos objetos. */
 	public int giveAllTo(ServerPlayer player) {
+		return this.giveAllTo(player, false);
+	}
+
+	/** Igual, y si includeArmor también se quita la armadura (al despedirlo). */
+	public int giveAllTo(ServerPlayer player, boolean includeArmor) {
 		int total = 0;
 		List<ItemStack> stacks = new ArrayList<>();
 		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
@@ -244,6 +280,12 @@ public class BecarioEntity extends TamableAnimal {
 		}
 		stacks.add(this.getMainHandItem().copy());
 		this.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+		if (includeArmor) {
+			for (EquipmentSlot slot : ARMOR_SLOTS) {
+				stacks.add(this.getItemBySlot(slot).copy());
+				this.setItemSlot(slot, ItemStack.EMPTY);
+			}
+		}
 
 		for (ItemStack stack : stacks) {
 			if (stack.isEmpty()) {
@@ -277,6 +319,21 @@ public class BecarioEntity extends TamableAnimal {
 		}
 
 		Component name = held.getHoverName();
+
+		// Armadura: se la pone (y guarda la que llevaba, si había).
+		EquipmentSlot armorSlot = this.getEquipmentSlotForItem(held);
+		if (armorSlot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
+			ItemStack previous = this.getItemBySlot(armorSlot).copy();
+			this.setItemSlot(armorSlot, held.copyWithCount(1));
+			if (!player.getAbilities().instabuild) {
+				held.shrink(1);
+			}
+			if (!previous.isEmpty() && this.level() instanceof ServerLevel level) {
+				this.storeOrDrop(level, previous);
+			}
+			this.tell(Component.literal("me pongo ").append(name).append("."));
+			return InteractionResult.SUCCESS;
+		}
 		int before = held.getCount();
 		ItemStack leftover = this.inventory.addItem(held.copy());
 		int moved = before - leftover.getCount();
@@ -338,18 +395,54 @@ public class BecarioEntity extends TamableAnimal {
 		}
 	}
 
-	/** Si muere, suelta todo lo que llevaba. */
+	/** Si muere, suelta todo lo que llevaba (inventario, herramienta y armadura). */
 	@Override
 	public void die(DamageSource source) {
 		if (this.level() instanceof ServerLevel level) {
-			for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
-				ItemStack stack = this.inventory.removeItemNoUpdate(slot);
-				if (!stack.isEmpty()) {
-					this.spawnAtLocation(level, stack);
-				}
-			}
+			this.dropEverything(level);
 		}
 		super.die(source);
+	}
+
+	// ------------------------------------------------- uno por jugador
+
+	/**
+	 * Cada 5 s comprueba en el registro que sigue siendo EL becario de su dueño.
+	 * Si el dueño invocó otro mientras este estaba en una zona no cargada,
+	 * este se retira (soltando lo que llevaba). Si el dueño no tiene ninguno
+	 * registrado (becarios antiguos), se registra.
+	 */
+	@Override
+	public void tick() {
+		super.tick();
+		if (this.tickCount % 100 != 0 || !(this.level() instanceof ServerLevel level)) {
+			return;
+		}
+		LivingEntity owner = this.getOwner();
+		if (!(owner instanceof ServerPlayer)) {
+			return; // dueño desconectado: no decidimos nada
+		}
+		BecarioRegistry registry = BecarioRegistry.get(level.getServer());
+		UUID registered = registry.becarioOf(owner.getUUID());
+		if (registered == null) {
+			registry.set(owner.getUUID(), this.getUUID());
+		} else if (!registered.equals(this.getUUID())) {
+			this.dropEverything(level);
+			this.discard();
+		}
+	}
+
+	/** Al morir o ser despedido (no al descargarse el chunk), libera su hueco en el registro. */
+	@Override
+	public void remove(Entity.RemovalReason reason) {
+		if (reason.shouldDestroy() && this.level() instanceof ServerLevel level) {
+			LivingEntity owner = this.getOwner();
+			UUID ownerId = owner != null ? owner.getUUID() : null;
+			if (ownerId != null) {
+				BecarioRegistry.get(level.getServer()).clearIf(ownerId, this.getUUID());
+			}
+		}
+		super.remove(reason);
 	}
 
 	// ------------------------------------------------------------ varios

@@ -9,7 +9,9 @@ import com.jorgesox.becarios.entity.BecarioEntity;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.player.PlayerModel;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.ArmorModelSet;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
+import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.core.ClientAsset;
 import net.minecraft.resources.Identifier;
@@ -30,6 +32,11 @@ public class BecarioRenderer extends HumanoidMobRenderer<BecarioEntity, AvatarRe
 
 	public BecarioRenderer(EntityRendererProvider.Context context) {
 		super(context, new PlayerModel(context.bakeLayer(ModelLayers.PLAYER), false), 0.5F);
+		// Capa de armadura con los mismos modelos que usa el jugador.
+		this.addLayer(new HumanoidArmorLayer<>(
+			this,
+			ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), part -> new PlayerModel(part, false)),
+			context.getEquipmentRenderer()));
 	}
 
 	@Override

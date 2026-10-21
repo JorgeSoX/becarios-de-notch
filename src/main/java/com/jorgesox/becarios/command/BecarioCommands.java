@@ -1,9 +1,11 @@
 package com.jorgesox.becarios.command;
 
 import java.util.List;
+import java.util.UUID;
 
 import com.jorgesox.becarios.BecarioSkins;
 import com.jorgesox.becarios.entity.BecarioEntity;
+import com.jorgesox.becarios.entity.BecarioRegistry;
 import com.jorgesox.becarios.entity.ModEntities;
 import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
@@ -17,6 +19,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -73,9 +76,17 @@ public final class BecarioCommands {
 			));
 	}
 
-	/** Busca el becario del jugador en todas las dimensiones cargadas, o null. */
+	/**
+	 * Busca el becario del jugador: primero por el registro persistente (UUID),
+	 * y si no está registrado, escaneando las entidades cargadas (becarios antiguos).
+	 */
 	private static BecarioEntity findOwned(ServerPlayer player) {
-		for (ServerLevel level : player.level().getServer().getAllLevels()) {
+		MinecraftServer server = player.level().getServer();
+		UUID registered = BecarioRegistry.get(server).becarioOf(player.getUUID());
+		for (ServerLevel level : server.getAllLevels()) {
+			if (registered != null && level.getEntity(registered) instanceof BecarioEntity becario) {
+				return becario;
+			}
 			List<? extends BecarioEntity> found =
 				level.getEntities(EntityTypeTest.forClass(BecarioEntity.class), becario -> becario.isOwnedBy(player));
 			if (!found.isEmpty()) {
@@ -116,6 +127,14 @@ public final class BecarioCommands {
 		becario.tame(player);               // lo marca como domado y le asigna dueño
 		becario.setPersistenceRequired();   // que nunca desaparezca por estar lejos
 		level.addFreshEntity(becario);
+
+		BecarioRegistry registry = BecarioRegistry.get(level.getServer());
+		boolean replacedUnloaded = registry.becarioOf(player.getUUID()) != null;
+		registry.set(player.getUUID(), becario.getUUID());
+		if (replacedUnloaded) {
+			source.sendSuccess(() -> Component.literal(
+				"Si tenías otro becario en una zona sin cargar, se irá cuando se cargue y soltará allí lo que llevaba."), false);
+		}
 
 		source.sendSuccess(() -> Component.literal(name + " se ha incorporado como becario."), false);
 		return 1;
@@ -160,7 +179,7 @@ public final class BecarioCommands {
 			return 0;
 		}
 		String name = becario.getName().getString();
-		int returned = becario.giveAllTo(source.getPlayerOrException());
+		int returned = becario.giveAllTo(source.getPlayerOrException(), true);
 		becario.discard();
 		source.sendSuccess(() -> Component.literal(name + " ha sido despedido"
 			+ (returned > 0 ? " (te devuelve " + returned + " objetos)." : ".")), false);
