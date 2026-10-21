@@ -218,7 +218,7 @@ public final class BecarioCommands {
 		if (becario == null) {
 			return 0;
 		}
-		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": " + becario.inventorySummary()), false);
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": ").append(becario.inventorySummary()), false);
 		return 1;
 	}
 

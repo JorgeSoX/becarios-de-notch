@@ -7,12 +7,14 @@ import java.util.Map;
 
 import com.jorgesox.becarios.BecarioSkins;
 import com.jorgesox.becarios.task.BecarioTask;
+import com.jorgesox.becarios.task.BlockGroups;
 import com.jorgesox.becarios.task.BlockMiningGoal;
 import com.jorgesox.becarios.task.CollectItemsGoal;
 
 import org.jspecify.annotations.Nullable;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -130,8 +132,13 @@ public class BecarioEntity extends TamableAnimal {
 
 	/** Mensaje al dueño, con el nombre del becario delante. */
 	public void tell(String text) {
+		this.tell(Component.literal(text));
+	}
+
+	/** Igual, pero con Component: los nombres de objeto se traducen en el idioma del cliente. */
+	public void tell(Component text) {
 		if (this.getOwner() instanceof ServerPlayer owner) {
-			owner.sendSystemMessage(Component.literal("<" + this.getName().getString() + "> " + text));
+			owner.sendSystemMessage(Component.literal("<" + this.getName().getString() + "> ").append(text));
 		}
 	}
 
@@ -193,25 +200,39 @@ public class BecarioEntity extends TamableAnimal {
 		return true;
 	}
 
-	/** "3x Hierro bruto, 12x Piedra..." o "inventario vacío". */
-	public String inventorySummary() {
-		Map<String, Integer> counts = new LinkedHashMap<>();
+	/** "llevo 3x Hierro bruto, 12x Piedra..." (nombres traducidos por el cliente) o "no llevo nada encima." */
+	public Component inventorySummary() {
+		// Suma por tipo de objeto (clave = id del item), conservando el orden.
+		Map<String, ItemStack> totals = new LinkedHashMap<>();
 		ItemStack inHand = this.getMainHandItem();
 		if (!inHand.isEmpty()) {
-			counts.merge(inHand.getHoverName().getString() + " (en la mano)", inHand.getCount(), Integer::sum);
+			totals.put(inHand.getItem().toString(), inHand.copy());
 		}
 		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
 			ItemStack stack = this.inventory.getItem(slot);
-			if (!stack.isEmpty()) {
-				counts.merge(stack.getHoverName().getString(), stack.getCount(), Integer::sum);
+			if (stack.isEmpty()) {
+				continue;
+			}
+			ItemStack total = totals.get(stack.getItem().toString());
+			if (total == null) {
+				totals.put(stack.getItem().toString(), stack.copy());
+			} else {
+				total.grow(stack.getCount());
 			}
 		}
-		if (counts.isEmpty()) {
-			return "no llevo nada encima.";
+		if (totals.isEmpty()) {
+			return Component.literal("no llevo nada encima.");
 		}
-		List<String> parts = new ArrayList<>();
-		counts.forEach((name, count) -> parts.add(count + "x " + name));
-		return "llevo " + String.join(", ", parts) + ".";
+		MutableComponent text = Component.literal("llevo ");
+		boolean first = true;
+		for (ItemStack total : totals.values()) {
+			if (!first) {
+				text.append(", ");
+			}
+			first = false;
+			text.append(total.getCount() + "x ").append(total.getHoverName());
+		}
+		return text.append(".");
 	}
 
 	/** Entrega al jugador todo el inventario y lo que lleva en la mano. Devuelve cuántos objetos. */
@@ -255,7 +276,7 @@ public class BecarioEntity extends TamableAnimal {
 			return InteractionResult.SUCCESS;
 		}
 
-		String name = held.getHoverName().getString();
+		Component name = held.getHoverName();
 		int before = held.getCount();
 		ItemStack leftover = this.inventory.addItem(held.copy());
 		int moved = before - leftover.getCount();
@@ -266,7 +287,7 @@ public class BecarioEntity extends TamableAnimal {
 		if (!player.getAbilities().instabuild) {
 			player.setItemInHand(hand, leftover);
 		}
-		this.tell("guardado " + moved + "x " + name + ".");
+		this.tell(Component.literal("guardado " + moved + "x ").append(name).append("."));
 		return InteractionResult.SUCCESS;
 	}
 
@@ -282,6 +303,14 @@ public class BecarioEntity extends TamableAnimal {
 			items.add(this.inventory.getItem(slot));
 		}
 		output.store("inventory", ItemStack.OPTIONAL_CODEC.listOf(), items);
+
+		// Orden de trabajo en curso: se guarda para que sobreviva a reinicios.
+		if (this.task != null) {
+			output.putString("task_kind", this.task.kind.name());
+			output.putString("task_label", this.task.label);
+			output.putInt("task_target", this.task.target);
+			output.putInt("task_done", this.task.done);
+		}
 	}
 
 	@Override
@@ -294,6 +323,19 @@ public class BecarioEntity extends TamableAnimal {
 				this.inventory.setItem(slot, items.get(slot));
 			}
 		});
+
+		// Restaura la orden de trabajo (si el grupo de bloques ya no existe, se ignora).
+		String kind = input.getStringOr("task_kind", "");
+		if (kind.equals(BecarioTask.Kind.COLLECT.name())) {
+			this.task = BecarioTask.collect();
+			this.task.done = input.getIntOr("task_done", 0);
+		} else if (kind.equals(BecarioTask.Kind.MINE.name())) {
+			BlockGroups.Group group = BlockGroups.get(input.getStringOr("task_label", ""));
+			if (group != null) {
+				this.task = BecarioTask.mine(group.label(), group.test(), input.getIntOr("task_target", 1));
+				this.task.done = input.getIntOr("task_done", 0);
+			}
+		}
 	}
 
 	/** Si muere, suelta todo lo que llevaba. */
