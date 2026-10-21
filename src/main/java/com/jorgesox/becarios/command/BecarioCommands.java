@@ -3,7 +3,6 @@ package com.jorgesox.becarios.command;
 import java.util.List;
 
 import com.jorgesox.becarios.BecarioSkins;
-import com.jorgesox.becarios.ai.BecarioBrain;
 import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.entity.ModEntities;
 import com.jorgesox.becarios.task.BecarioTask;
@@ -30,7 +29,6 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  *   /becario invocar <nombre> <skin>
  *   /becario sigue | quieto | ven | despedir
  *   /becario mina <objetivo> [cantidad]   (tala = alias de mina madera)
- *   /becario di <texto>   (lenguaje natural, lo interpreta el LLM)
  *   /becario tala [cantidad] | recoge | para | dame | inventario | estado
  */
 public final class BecarioCommands {
@@ -71,9 +69,6 @@ public final class BecarioCommands {
 				.then(Commands.literal("para").executes(ctx -> stopTask(ctx.getSource())))
 				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
 				.then(Commands.literal("inventario").executes(ctx -> inventory(ctx.getSource())))
-				.then(Commands.literal("di")
-					.then(Commands.argument("texto", StringArgumentType.greedyString())
-						.executes(ctx -> say(ctx.getSource(), StringArgumentType.getString(ctx, "texto")))))
 				.then(Commands.literal("estado").executes(ctx -> status(ctx.getSource())))
 			));
 	}
@@ -169,16 +164,6 @@ public final class BecarioCommands {
 		becario.discard();
 		source.sendSuccess(() -> Component.literal(name + " ha sido despedido"
 			+ (returned > 0 ? " (te devuelve " + returned + " objetos)." : ".")), false);
-		return 1;
-	}
-
-	/** /becario di <texto>: el LLM interpreta el mensaje y elige la acción. */
-	private static int say(CommandSourceStack source, String text) throws CommandSyntaxException {
-		BecarioEntity becario = requireBecario(source);
-		if (becario == null) {
-			return 0;
-		}
-		BecarioBrain.handle(source.getPlayerOrException(), becario, text);
 		return 1;
 	}
 
