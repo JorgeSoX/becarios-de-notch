@@ -45,6 +45,8 @@ public class ExpeditionGoal extends Goal {
 	private static final int STEP_TIMEOUT = 80;
 	private static final int ORE_SCAN = 4;
 	private static final double REACH_SQ = 4.5 * 4.5;
+	/** Máximo intentando llegar a un mineral concreto antes de darlo por imposible. */
+	private static final int ORE_TIMEOUT = 1200;
 
 	private final BecarioEntity becario;
 	private final Breaker breaker;
@@ -65,6 +67,7 @@ public class ExpeditionGoal extends Goal {
 	private @Nullable BlockPos stepTarget;
 	private int stepTicks;
 	private @Nullable BlockPos oreTarget;
+	private int oreTicks;
 
 	public ExpeditionGoal(BecarioEntity becario) {
 		this.becario = becario;
@@ -121,7 +124,7 @@ public class ExpeditionGoal extends Goal {
 	}
 
 	private void debug(String what) {
-		BecariosDeNotch.LOGGER.info("[expedicion] {} pos={} dir={}", what, becario.blockPosition(), dir);
+		BecariosDeNotch.LOGGER.debug("[expedicion] {} pos={} dir={}", what, becario.blockPosition(), dir);
 	}
 
 	/** Pausa la expedición: el BlockMiningGoal vuelve a mirar alrededor (y luego seguimos). */
@@ -194,6 +197,7 @@ public class ExpeditionGoal extends Goal {
 		// 1) ¿Hay mineral a la vista en las paredes? Prioridad: sacarlo.
 		if (oreTarget == null && stepTarget == null && ticks % 10 == 0) {
 			oreTarget = findNearbyOre(level, task);
+			oreTicks = 0;
 		}
 		if (oreTarget != null) {
 			digToOre(level, task);
@@ -247,11 +251,31 @@ public class ExpeditionGoal extends Goal {
 
 		if (eye.distanceToSqr(center) > REACH_SQ) {
 			// Fuera de alcance: acercarse cavando en su dirección.
-			Direction towards = Direction.getApproximateNearest(center.x - eye.x, 0, center.z - eye.z);
-			if (towards.getAxis().isHorizontal()) {
-				dir = towards;
+			// Si está casi en la vertical del mineral, se mantiene la dirección
+			// (si no, oscila este/oeste sin avanzar) y baja en escalera.
+			double dx = center.x - becario.getX();
+			double dz = center.z - becario.getZ();
+			if (dx * dx + dz * dz >= 4.0) {
+				Direction towards = Direction.getApproximateNearest(dx, 0, dz);
+				if (towards.getAxis().isHorizontal()) {
+					dir = towards;
+				}
 			}
-			advance(level, false);
+			boolean below = ore.getY() < becario.getBlockY() - 1;
+			boolean above = ore.getY() > becario.getBlockY() + 2;
+			if (++oreTicks > ORE_TIMEOUT) {
+				debug("no llego al mineral " + ore);
+				badOres.add(ore);
+				oreTarget = null;
+				return;
+			}
+			if (above) {
+				// Encima y fuera de alcance: lo dejamos (subir cavando es lento y peligroso).
+				badOres.add(ore);
+				oreTarget = null;
+				return;
+			}
+			advance(level, below);
 			return;
 		}
 
