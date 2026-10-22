@@ -30,8 +30,8 @@ public class BecarioInventoryScreen extends AbstractContainerScreen<BecarioInven
 		super.extractBackground(g, mouseX, mouseY, a);
 		int x = this.leftPos;
 		int y = this.topPos;
-		// Columna de equipo (casco, peto, pantalones, botas, mano), por detrás del cofre.
-		GuiStyle.panel(g, x - 2, y + 10, OX + 6, 5 * 18 + 14);
+		// Columna de equipo (casco, peto, pantalones, botas, mano derecha, mano izquierda).
+		GuiStyle.panel(g, x - 2, y + 10, OX + 6, BecarioInventoryMenu.EQUIP_SLOTS * 18 + 14);
 		for (int i = 0; i < BecarioInventoryMenu.EQUIP_SLOTS; i++) {
 			GuiStyle.slot(g, x + 3, y + 17 + i * 18, 18, 18);
 		}

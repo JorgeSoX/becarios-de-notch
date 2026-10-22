@@ -14,6 +14,14 @@ repositories {
 loom {
 	splitEnvironmentSourceSets()
 
+	// Cliente de pruebas con nombre fijo: así el UUID no cambia entre arranques
+	// y el becario sigue reconociendo a su dueño.
+	runs {
+		client {
+			programArgs "--username", "JorgeDev"
+		}
+	}
+
 	mods {
 		"becarios-de-notch" {
 			sourceSet sourceSets.main

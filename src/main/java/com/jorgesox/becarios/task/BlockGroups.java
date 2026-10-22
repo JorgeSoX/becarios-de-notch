@@ -18,31 +18,39 @@ import net.minecraft.world.level.block.state.BlockState;
  * normal y de pizarra profunda).
  */
 public final class BlockGroups {
-	public record Group(String label, Predicate<BlockState> test) {
+	/**
+	 * Cómo buscarlo si no está a la vista:
+	 * SURFACE = explorar andando por la superficie (árboles, arena...);
+	 * UNDERGROUND = bajar en escalera hasta preferredY y hacer túneles de minería.
+	 */
+	public enum Search { SURFACE, UNDERGROUND }
+
+	public record Group(String label, Predicate<BlockState> test, Search search, int preferredY) {
 	}
 
 	private static final Map<String, Group> GROUPS = new LinkedHashMap<>();
 
 	static {
-		put("madera", s -> s.is(BlockTags.LOGS));
-		put("piedra", s -> s.is(BlockTags.BASE_STONE_OVERWORLD));
-		put("tierra", s -> s.is(BlockTags.DIRT));
-		put("arena", s -> s.is(BlockTags.SAND));
-		put("carbon", any(Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE));
-		put("hierro", s -> s.is(BlockTags.IRON_ORES));
-		put("cobre", s -> s.is(BlockTags.COPPER_ORES));
-		put("oro", s -> s.is(BlockTags.GOLD_ORES));
-		put("redstone", any(Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE));
-		put("lapislazuli", any(Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE));
-		put("diamante", any(Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE));
-		put("esmeralda", any(Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE));
+		// Alturas típicas de cada mineral en el mundo normal (dónde más abunda).
+		put("madera", s -> s.is(BlockTags.LOGS), Search.SURFACE, 0);
+		put("piedra", s -> s.is(BlockTags.BASE_STONE_OVERWORLD), Search.UNDERGROUND, 50);
+		put("tierra", s -> s.is(BlockTags.DIRT), Search.SURFACE, 0);
+		put("arena", s -> s.is(BlockTags.SAND), Search.SURFACE, 0);
+		put("carbon", any(Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE), Search.UNDERGROUND, 40);
+		put("hierro", s -> s.is(BlockTags.IRON_ORES), Search.UNDERGROUND, 16);
+		put("cobre", s -> s.is(BlockTags.COPPER_ORES), Search.UNDERGROUND, 48);
+		put("oro", s -> s.is(BlockTags.GOLD_ORES), Search.UNDERGROUND, -16);
+		put("redstone", any(Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE), Search.UNDERGROUND, -56);
+		put("lapislazuli", any(Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE), Search.UNDERGROUND, 0);
+		put("diamante", any(Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE), Search.UNDERGROUND, -56);
+		put("esmeralda", any(Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE), Search.UNDERGROUND, 100);
 	}
 
 	private BlockGroups() {
 	}
 
-	private static void put(String name, Predicate<BlockState> test) {
-		GROUPS.put(name, new Group(name, test));
+	private static void put(String name, Predicate<BlockState> test, Search search, int preferredY) {
+		GROUPS.put(name, new Group(name, test, search, preferredY));
 	}
 
 	private static Predicate<BlockState> any(Block... blocks) {

@@ -48,7 +48,7 @@ public final class BecarioNetwork {
 	}
 
 	/** S2C: abre el menú del becario con un resumen de su estado. */
-	public record OpenMenu(String name, String skin, float health, float maxHealth, String mode, String status)
+	public record OpenMenu(String name, String skin, float health, float maxHealth, String mode, String status, String where)
 		implements CustomPacketPayload {
 		public static final Type<OpenMenu> TYPE = new Type<>(BecariosDeNotch.id("open_menu"));
 		public static final StreamCodec<ByteBuf, OpenMenu> CODEC = StreamCodec.composite(
@@ -58,6 +58,7 @@ public final class BecarioNetwork {
 			ByteBufCodecs.FLOAT, OpenMenu::maxHealth,
 			ByteBufCodecs.stringUtf8(32), OpenMenu::mode,
 			ByteBufCodecs.stringUtf8(256), OpenMenu::status,
+			ByteBufCodecs.stringUtf8(256), OpenMenu::where,
 			OpenMenu::new);
 
 		@Override

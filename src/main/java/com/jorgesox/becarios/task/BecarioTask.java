@@ -8,8 +8,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Una orden de trabajo en curso: minar/talar cierto tipo de bloque N veces,
- * o recoger objetos sueltos. Solo vive en el servidor y no se guarda al
- * cerrar el mundo (tras reiniciar, el becario vuelve a seguirte).
+ * o recoger objetos sueltos. Se guarda con el becario (ver BecarioEntity).
  */
 public final class BecarioTask {
 	public enum Kind { MINE, COLLECT }
@@ -23,6 +22,12 @@ public final class BecarioTask {
 	public final int target;
 	/** Progreso: bloques rotos u objetos recogidos. */
 	public int done;
+	/** No hay objetivo a la vista: toca explorar o excavar (lo hace ExpeditionGoal). */
+	public boolean needsExpedition;
+	/** Cuántas expediciones lleva. */
+	public int expeditions;
+	/** Ticks dedicados a buscar (explorar/excavar): se rinde al agotar el presupuesto. */
+	public int searchTicks;
 
 	private BecarioTask(Kind kind, String label, @Nullable Predicate<BlockState> blocks, int target) {
 		this.kind = kind;
@@ -41,7 +46,7 @@ public final class BecarioTask {
 
 	public String describe() {
 		return kind == Kind.MINE
-			? "minando " + label + " (" + done + "/" + target + ")"
+			? (needsExpedition ? "buscando " : "minando ") + label + " (" + done + "/" + target + ")"
 			: "recogiendo objetos (" + done + " hasta ahora)";
 	}
 }

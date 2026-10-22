@@ -26,7 +26,7 @@ import net.minecraft.network.chat.Component;
  */
 public class HireScreen extends Screen {
 	private static final int PANEL_W = 320;
-	private static final int PANEL_H = 214;
+	private static final int PANEL_H = 248;
 	private static final int COLS = 6;
 	private static final int ROWS = 3;
 	private static final int THUMB_W = 28;
@@ -58,12 +58,12 @@ public class HireScreen extends Screen {
 		preview.setY(this.top + 26);
 		this.addRenderableWidget(preview);
 
-		// Nombre (obligatorio, 1-16 caracteres).
+		// Nombre opcional (máx. 32): si se deja vacío, se llama como la skin.
 		int rightX = this.left + 112;
 		String previousName = this.nameBox != null ? this.nameBox.getValue() : "";
 		this.nameBox = new EditBox(this.font, rightX, this.top + 26, 198, 18, Component.literal("Nombre"));
-		this.nameBox.setMaxLength(16);
-		this.nameBox.setHint(Component.literal("Nombre del becario (obligatorio)"));
+		this.nameBox.setMaxLength(32);
+		this.nameBox.setHint(Component.literal("Nombre (opcional: si no, el de la skin)"));
 		this.nameBox.setValue(previousName);
 		this.nameBox.setResponder(text -> this.updateButtons());
 		this.addRenderableWidget(this.nameBox);
@@ -85,9 +85,9 @@ public class HireScreen extends Screen {
 			.bounds(rightX + 178, pagesY, 20, 16).build());
 
 		this.hireButton = this.addRenderableWidget(Button.builder(Component.literal("Contratar"), b -> this.hire())
-			.bounds(this.left + PANEL_W - 170, this.top + PANEL_H - 28, 80, 20).build());
+			.bounds(this.left + PANEL_W - 170, this.top + PANEL_H - 26, 80, 20).build());
 		this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), b -> this.onClose())
-			.bounds(this.left + PANEL_W - 86, this.top + PANEL_H - 28, 76, 20).build());
+			.bounds(this.left + PANEL_W - 86, this.top + PANEL_H - 26, 76, 20).build());
 
 		this.setInitialFocus(this.nameBox);
 		this.updateButtons();
@@ -108,9 +108,6 @@ public class HireScreen extends Screen {
 	}
 
 	private void updateButtons() {
-		if (this.hireButton != null) {
-			this.hireButton.active = !this.nameBox.getValue().trim().isEmpty();
-		}
 		boolean paged = this.pageCount() > 1;
 		if (this.prevButton != null) {
 			this.prevButton.visible = paged;
@@ -120,9 +117,6 @@ public class HireScreen extends Screen {
 
 	private void hire() {
 		String name = this.nameBox.getValue().trim();
-		if (name.isEmpty()) {
-			return;
-		}
 		ClientPlayNetworking.send(new BecarioNetwork.Hire(name, this.selected));
 		this.onClose();
 	}
@@ -138,8 +132,9 @@ public class HireScreen extends Screen {
 	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float a) {
 		super.extractRenderState(g, mouseX, mouseY, a);
 		g.text(this.font, this.title, this.left + 10, this.top + 9, GuiStyle.TEXT, false);
-		g.text(this.font, "Skin: " + BecarioSkins.displayName(this.selected), this.left + 112, this.top + 50, GuiStyle.TEXT, false);
-		g.text(this.font, "Arrastra para girar", this.left + 13, this.top + 162, 0xFF707070, false);
+		String shownName = this.nameBox.getValue().trim().isEmpty() ? BecarioSkins.displayName(this.selected) : this.nameBox.getValue().trim();
+		g.text(this.font, "Se llamará: " + shownName, this.left + 112, this.top + 50, GuiStyle.TEXT, false);
+		g.text(this.font, "Arrastra: girar", this.left + 13, this.top + 162, 0xFF707070, false);
 		if (this.pageCount() > 1) {
 			String label = "Página " + (this.page + 1) + "/" + this.pageCount();
 			int pagesY = this.top + 64 + ROWS * (THUMB_H + 4);

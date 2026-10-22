@@ -27,6 +27,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
@@ -41,7 +42,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  *   /becario tala [cantidad] | recoge | para | dame | inventario | estado
  */
 public final class BecarioCommands {
-	private static final int MAX_NAME_LENGTH = 16;
+	private static final int MAX_NAME_LENGTH = 32;
 
 	private BecarioCommands() {
 	}
@@ -80,6 +81,8 @@ public final class BecarioCommands {
 				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
 				.then(Commands.literal("inventario").executes(ctx -> inventory(ctx.getSource())))
 				.then(Commands.literal("estado").executes(ctx -> status(ctx.getSource())))
+				.then(Commands.literal("donde").executes(ctx -> where(ctx.getSource())))
+				.then(Commands.literal("brujula").executes(ctx -> giveCompass(ctx.getSource())))
 				.then(Commands.literal("modo")
 					.then(Commands.literal("pasivo").executes(ctx -> mode(ctx.getSource(), CombatMode.PASIVO, 16)))
 					.then(Commands.literal("defensa").executes(ctx -> mode(ctx.getSource(), CombatMode.DEFENSA, 16)))
@@ -114,16 +117,33 @@ public final class BecarioCommands {
 		return null;
 	}
 
+	/** ¿Tiene ya este jugador un becario (cargado) con ese nombre? Sin distinguir mayúsculas. */
+	private static boolean nameTaken(ServerPlayer player, String name) {
+		for (ServerLevel level : player.level().getServer().getAllLevels()) {
+			for (BecarioEntity becario : level.getEntities(EntityTypeTest.forClass(BecarioEntity.class), b -> b.isOwnedBy(player))) {
+				if (becario.getName().getString().equalsIgnoreCase(name)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private static int summon(CommandSourceStack source, String rawName, String skin) throws CommandSyntaxException {
 		ServerPlayer player = source.getPlayerOrException();
-		String name = rawName.trim();
-
-		if (name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
-			source.sendFailure(Component.literal("El nombre debe tener entre 1 y " + MAX_NAME_LENGTH + " caracteres."));
-			return 0;
-		}
 		if (!BecarioSkins.isValid(skin)) {
 			source.sendFailure(Component.literal("Skin desconocida. Disponibles: " + String.join(", ", BecarioSkins.IDS)));
+			return 0;
+		}
+		// Nombre opcional: si no se pone, se llama como la skin.
+		String name = rawName.trim().isEmpty() ? BecarioSkins.displayName(skin) : rawName.trim();
+		if (name.length() > MAX_NAME_LENGTH) {
+			source.sendFailure(Component.literal("El nombre puede tener como mucho " + MAX_NAME_LENGTH + " caracteres."));
+			return 0;
+		}
+		// Nunca dos becarios tuyos con el mismo nombre: hay que cambiarlo.
+		if (nameTaken(player, name)) {
+			source.sendFailure(Component.literal("Ya tienes un becario llamado \"" + name + "\". Ponle otro nombre."));
 			return 0;
 		}
 		if (findOwned(player) != null) {
@@ -330,7 +350,7 @@ public final class BecarioCommands {
 	public static void openMenu(ServerPlayer player, BecarioEntity becario) {
 		ServerPlayNetworking.send(player, new BecarioNetwork.OpenMenu(
 			becario.getName().getString(), becario.getSkin(), becario.getHealth(), becario.getMaxHealth(),
-			becario.getCombatMode().name(), statusLine(becario)));
+			becario.getCombatMode().name(), statusLine(becario), whereLine(player, becario)));
 	}
 
 	public static void openInventory(ServerPlayer player, BecarioEntity becario) {
@@ -377,6 +397,53 @@ public final class BecarioCommands {
 		} catch (CommandSyntaxException | IllegalArgumentException e) {
 			player.sendSystemMessage(Component.literal("No se pudo hacer: " + e.getMessage()));
 		}
+	}
+
+	/** Posición, distancia y dirección del becario respecto al jugador. */
+	public static String whereLine(ServerPlayer player, BecarioEntity becario) {
+		net.minecraft.core.BlockPos p = becario.blockPosition();
+		String coords = p.getX() + ", " + p.getY() + ", " + p.getZ();
+		if (becario.level() != player.level()) {
+			return coords + " (en otra dimensión)";
+		}
+		double dx = becario.getX() - player.getX();
+		double dz = becario.getZ() - player.getZ();
+		int distance = (int) Math.round(Math.sqrt(dx * dx + dz * dz + Math.pow(becario.getY() - player.getY(), 2)));
+		if (distance < 4) {
+			return coords + " (a tu lado)";
+		}
+		String[] names = {"sur", "suroeste", "oeste", "noroeste", "norte", "noreste", "este", "sureste"};
+		double angle = Math.toDegrees(Math.atan2(-dx, dz)); // 0 = sur (+Z), igual que el juego
+		int index = (int) Math.floorMod(Math.round(angle / 45.0), 8L);
+		int dy = (int) Math.round(becario.getY() - player.getY());
+		String height = Math.abs(dy) < 4 ? "" : (dy > 0 ? ", " + dy + " más arriba" : ", " + (-dy) + " más abajo");
+		return coords + " (a " + distance + " bloques al " + names[index] + height + ")";
+	}
+
+	private static int where(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		ServerPlayer player = source.getPlayerOrException();
+		String line = becario.getName().getString() + ": estoy en " + whereLine(player, becario) + ". Ahora: " + statusLine(becario) + ".";
+		source.sendSuccess(() -> Component.literal(line), false);
+		return 1;
+	}
+
+	private static int giveCompass(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		ServerPlayer player = source.getPlayerOrException();
+		ItemStack compass = becario.createCompass();
+		if (!player.getInventory().add(compass)) {
+			source.sendFailure(Component.literal("No te cabe la brújula: haz hueco en tu inventario."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Toma: esta brújula apunta siempre a " + becario.getName().getString() + "."), false);
+		return 1;
 	}
 
 	/** Devuelve el becario del jugador que ejecuta el comando; si no tiene, avisa y devuelve null. */

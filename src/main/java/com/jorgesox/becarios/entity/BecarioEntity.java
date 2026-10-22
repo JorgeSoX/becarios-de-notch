@@ -1,6 +1,8 @@
 package com.jorgesox.becarios.entity;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
 import com.jorgesox.becarios.task.BlockMiningGoal;
 import com.jorgesox.becarios.task.CollectItemsGoal;
+import com.jorgesox.becarios.task.ExpeditionGoal;
 
 import org.jspecify.annotations.Nullable;
 
@@ -117,9 +120,11 @@ public class BecarioEntity extends TamableAnimal {
 		this.goalSelector.addGoal(2, new SitWhenOrderedToGoal(this));
 		this.goalSelector.addGoal(2, new OpenDoorGoal(this, true));
 		this.goalSelector.addGoal(3, new BlockMiningGoal(this));
+		this.goalSelector.addGoal(3, new ExpeditionGoal(this));
 		this.goalSelector.addGoal(3, new CollectItemsGoal(this));
 		this.goalSelector.addGoal(3, new FetchThrownItemsGoal(this));
 		this.goalSelector.addGoal(4, new ReturnToPostGoal(this));
+		this.goalSelector.addGoal(4, new ReturnAlongTrailGoal(this));
 		this.goalSelector.addGoal(4, new BecarioFollowOwnerGoal(this));
 		this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, Player.class, 8.0F));
 		this.goalSelector.addGoal(6, new RandomLookAroundGoal(this));
@@ -347,6 +352,24 @@ public class BecarioEntity extends TamableAnimal {
 		return true;
 	}
 
+	/** Para despejar el camino: saca lo que rompa más rápido ese bloque, sea o no la herramienta "correcta". */
+	public void equipFastestToolFor(BlockState state) {
+		float best = this.getMainHandItem().getDestroySpeed(state);
+		int bestSlot = -1;
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			float speed = this.inventory.getItem(slot).getDestroySpeed(state);
+			if (speed > best) {
+				best = speed;
+				bestSlot = slot;
+			}
+		}
+		if (bestSlot >= 0) {
+			ItemStack tool = this.inventory.getItem(bestSlot).copy();
+			this.inventory.setItem(bestSlot, this.getMainHandItem().copy());
+			this.setItemSlot(EquipmentSlot.MAINHAND, tool);
+		}
+	}
+
 	/** "llevo 3x Hierro bruto, 12x Piedra..." (nombres traducidos por el cliente) o "no llevo nada encima." */
 	public Component inventorySummary() {
 		// Suma por tipo de objeto (clave = id del item), conservando el orden.
@@ -406,7 +429,7 @@ public class BecarioEntity extends TamableAnimal {
 
 	private static EquipmentSlot[] allWornSlots() {
 		return new EquipmentSlot[] {
-			EquipmentSlot.MAINHAND, EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+			EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND, EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
 		};
 	}
 
@@ -425,6 +448,8 @@ public class BecarioEntity extends TamableAnimal {
 		stacks.add(this.getMainHandItem().copy());
 		this.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
 		if (includeArmor) {
+			stacks.add(this.getItemBySlot(EquipmentSlot.OFFHAND).copy());
+			this.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
 			for (EquipmentSlot slot : ARMOR_SLOTS) {
 				stacks.add(this.getItemBySlot(slot).copy());
 				this.setItemSlot(slot, ItemStack.EMPTY);
@@ -572,6 +597,125 @@ public class BecarioEntity extends TamableAnimal {
 
 	// ------------------------------------------- recoger, equipar y comer
 
+	// ------------------------------------------ rastro y bloques de relleno
+
+	/** Camino que ha recorrido excavando/explorando, para volver por él. */
+	private final Deque<BlockPos> trail = new ArrayDeque<>();
+
+	public void addTrail(BlockPos pos) {
+		if (this.trail.isEmpty() || !this.trail.peekLast().equals(pos)) {
+			this.trail.addLast(pos.immutable());
+			if (this.trail.size() > 1024) {
+				this.trail.pollFirst();
+			}
+		}
+	}
+
+	public Deque<BlockPos> getTrail() {
+		return this.trail;
+	}
+
+	public void clearTrail() {
+		this.trail.clear();
+	}
+
+	/** Bloques que usa para tapar lava o hacer puentes (escombros que suele llevar). */
+	private static final java.util.Set<net.minecraft.world.item.Item> FILLERS = java.util.Set.of(
+		net.minecraft.world.item.Items.COBBLESTONE, net.minecraft.world.item.Items.COBBLED_DEEPSLATE,
+		net.minecraft.world.item.Items.DIRT, net.minecraft.world.item.Items.STONE, net.minecraft.world.item.Items.DEEPSLATE,
+		net.minecraft.world.item.Items.NETHERRACK, net.minecraft.world.item.Items.ANDESITE, net.minecraft.world.item.Items.DIORITE,
+		net.minecraft.world.item.Items.GRANITE, net.minecraft.world.item.Items.TUFF, net.minecraft.world.item.Items.SANDSTONE);
+
+	/**
+	 * Pone un bloque de relleno (piedra, tierra...) de su inventario en esa
+	 * posición, como haría un jugador para tapar lava o cruzar un hueco.
+	 * Solo si el sitio está libre o es líquido. Devuelve true si lo ha puesto.
+	 */
+	public boolean placeFillerAt(ServerLevel level, BlockPos pos) {
+		BlockState current = level.getBlockState(pos);
+		if (!current.canBeReplaced() && level.getFluidState(pos).isEmpty()) {
+			return false;
+		}
+		for (int slot = -1; slot < this.inventory.getContainerSize(); slot++) {
+			// -1 = mano izquierda (como un jugador con bloques en la otra mano)
+			ItemStack stack = slot < 0 ? this.getOffhandItem() : this.inventory.getItem(slot);
+			if (!stack.isEmpty() && FILLERS.contains(stack.getItem())
+				&& stack.getItem() instanceof net.minecraft.world.item.BlockItem blockItem) {
+				level.setBlockAndUpdate(pos, blockItem.getBlock().defaultBlockState());
+				stack.shrink(1);
+				this.swing(InteractionHand.MAIN_HAND, net.minecraft.world.item.component.SwingAnimation.DEFAULT);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Atascado yendo hacia un punto: si justo delante (1-2 bloques) hay lava o un
+	 * hueco sobre lava, pone bloques de relleno para poder pasar.
+	 */
+	public void bridgeToward(ServerLevel level, net.minecraft.world.phys.Vec3 target) {
+		net.minecraft.core.Direction towards = net.minecraft.core.Direction.getApproximateNearest(
+			target.x - this.getX(), 0, target.z - this.getZ());
+		if (!towards.getAxis().isHorizontal()) {
+			return;
+		}
+		BlockPos feet = this.blockPosition();
+		for (int i = 1; i <= 2; i++) {
+			BlockPos front = feet.relative(towards, i);
+			if (level.getFluidState(front).is(net.minecraft.tags.FluidTags.LAVA)) {
+				this.placeFillerAt(level, front);
+			}
+			BlockPos floor = front.below();
+			boolean floorLava = level.getFluidState(floor).is(net.minecraft.tags.FluidTags.LAVA);
+			boolean holeOverLava = level.getBlockState(floor).isAir()
+				&& level.getFluidState(floor.below()).is(net.minecraft.tags.FluidTags.LAVA);
+			if (floorLava || holeOverLava) {
+				this.placeFillerAt(level, floor);
+			}
+		}
+	}
+
+	// ------------------------------------------------- brújula del becario
+
+	public static final String COMPASS_TAG = "becario_brujula";
+
+	/** Crea la brújula que apunta a este becario. */
+	public ItemStack createCompass() {
+		ItemStack compass = new ItemStack(net.minecraft.world.item.Items.COMPASS);
+		net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+		tag.putString(COMPASS_TAG, this.getUUID().toString());
+		compass.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
+		compass.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+			Component.literal("Brújula de " + this.getName().getString()));
+		return compass;
+	}
+
+	/** Cada segundo, las brújulas de este becario que lleve el dueño apuntan a donde está. */
+	private void updateOwnerCompasses(ServerLevel level) {
+		if (!(this.getOwner() instanceof ServerPlayer owner)) {
+			return;
+		}
+		String me = this.getUUID().toString();
+		net.minecraft.world.item.component.LodestoneTracker tracker = new net.minecraft.world.item.component.LodestoneTracker(
+			java.util.Optional.of(net.minecraft.core.GlobalPos.of(level.dimension(), this.blockPosition())), false);
+		for (int slot = 0; slot < owner.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = owner.getInventory().getItem(slot);
+			if (!stack.is(net.minecraft.world.item.Items.COMPASS)) {
+				continue;
+			}
+			net.minecraft.world.item.component.CustomData data = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+			if (data != null && me.equals(data.copyTag().getStringOr(COMPASS_TAG, ""))) {
+				stack.set(net.minecraft.core.component.DataComponents.LODESTONE_TRACKER, tracker);
+			}
+		}
+	}
+
+	/** Cuántas unidades de ese objeto lleva en el inventario. */
+	public int countItem(net.minecraft.world.item.Item item) {
+		return this.inventory.countItem(item);
+	}
+
 	public boolean hasInventorySpace() {
 		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
 			if (this.inventory.getItem(slot).isEmpty()) {
@@ -700,6 +844,15 @@ public class BecarioEntity extends TamableAnimal {
 		}
 		if (this.tickCount % 60 == 0) {
 			this.eatIfHurt(level);
+		}
+		if (this.tickCount % 20 == 0) {
+			this.updateOwnerCompasses(level);
+		}
+		// Trabajando lejos (o volviendo): mantener cargada su zona, igual que un
+		// jugador carga los chunks a su alrededor. Si no, se "congelaría" al alejarse.
+		if (this.tickCount % 20 == 0 && (this.task != null || !this.trail.isEmpty())) {
+			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
+				net.minecraft.world.level.ChunkPos.containing(this.blockPosition()), 2);
 		}
 		if (this.tickCount % 100 != 0) {
 			return;

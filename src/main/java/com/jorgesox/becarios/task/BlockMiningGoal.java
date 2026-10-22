@@ -16,7 +16,10 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,15 +32,15 @@ import net.minecraft.world.phys.Vec3;
  * andando, camina hasta él, lo rompe a la velocidad que le correspondería a un
  * jugador con esa herramienta, y guarda los drops en su inventario.
  *
- * Limitación (v1): no excava túneles; solo llega a bloques accesibles.
+ * Si no ve ninguno, deja paso a ExpeditionGoal (explorar o excavar túneles).
  */
 public class BlockMiningGoal extends Goal {
-	private static final int SEARCH_RADIUS = 16;
-	private static final int SEARCH_HEIGHT = 8;
+	private static final int SEARCH_RADIUS = 24;
+	private static final int SEARCH_HEIGHT = 12;
 	private static final double REACH_SQ = 4.2 * 4.2;
 	private static final int MAX_STUCK_TICKS = 160;
 	private static final int IGNORE_TICKS = 600;
-	private static final int MAX_PATH_TESTS = 6;
+	private static final int MAX_PATH_TESTS = 8;
 
 	private final BecarioEntity becario;
 	/** Bloques descartados (inalcanzables o peligrosos) hasta cierto tick. */
@@ -58,7 +61,7 @@ public class BlockMiningGoal extends Goal {
 	@Override
 	public boolean canUse() {
 		BecarioTask task = becario.getTask();
-		return task != null && task.kind == BecarioTask.Kind.MINE && !becario.isOrderedToSit();
+		return task != null && task.kind == BecarioTask.Kind.MINE && !task.needsExpedition && !becario.isOrderedToSit();
 	}
 
 	@Override
@@ -110,9 +113,13 @@ public class BlockMiningGoal extends Goal {
 			if (target == null) {
 				nextSearchTick = level.getGameTime() + 20;
 				if (++failedSearches >= 3) {
-					becario.finishTask(task.done == 0
-						? "no encuentro " + task.label + " al alcance."
-						: "no encuentro más " + task.label + " al alcance. He conseguido " + task.done + ".");
+					// Nada a la vista: a explorar / excavar (ExpeditionGoal). No se rinde:
+					// sigue hasta conseguirlo o hasta que le digan /becario para.
+					failedSearches = 0;
+					if (task.expeditions == 0) {
+						becario.tell("no veo " + task.label + " cerca. Voy a buscarlo, no paro hasta conseguirlo.");
+					}
+					task.needsExpedition = true;
 				}
 				return;
 			}
@@ -179,8 +186,30 @@ public class BlockMiningGoal extends Goal {
 		}
 
 		task.done++;
+		replantIfStump(level, target, state);
 		target = null;
 		breakTicks = 0;
+	}
+
+	/**
+	 * Si acaba de cortar la base de un tronco (debajo hay tierra) y lleva
+	 * brotes, planta uno: así el bosque no se acaba.
+	 */
+	private void replantIfStump(ServerLevel level, BlockPos pos, BlockState broken) {
+		if (!broken.is(BlockTags.LOGS) || !level.getBlockState(pos.below()).is(BlockTags.DIRT) || !level.getBlockState(pos).isAir()) {
+			return;
+		}
+		for (int slot = 0; slot < becario.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = becario.getInventory().getItem(slot);
+			if (stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem blockItem) {
+				BlockState sapling = blockItem.getBlock().defaultBlockState();
+				if (sapling.canSurvive(level, pos)) {
+					level.setBlockAndUpdate(pos, sapling);
+					stack.shrink(1);
+				}
+				return;
+			}
+		}
 	}
 
 	/** Misma fórmula que el jugador: dureza * (30 con herramienta correcta, 100 sin ella) / velocidad. */

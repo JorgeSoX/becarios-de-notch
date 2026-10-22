@@ -4,6 +4,7 @@ import java.util.EnumSet;
 
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.pathfinder.PathType;
 
 /**
@@ -18,7 +19,7 @@ public class BecarioFollowOwnerGoal extends Goal {
 	private static final double START = 6.0;
 	private static final double STOP = 2.5;
 	private static final double SPRINT_FROM = 10.0;
-	private static final int STUCK_TICKS = 200;          // 10 s sin progreso
+	private static final int STUCK_TICKS = 600;          // 30 s sin progreso
 	private static final int STUCK_WARN_COOLDOWN = 1200; // avisar como mucho cada 60 s
 
 	private final BecarioEntity becario;
@@ -38,6 +39,7 @@ public class BecarioFollowOwnerGoal extends Goal {
 	public boolean canUse() {
 		LivingEntity o = becario.getOwner();
 		if (o == null || o.level() != becario.level() || becario.unableToMoveToOwner()
+			|| !becario.getTrail().isEmpty()
 			|| becario.getCombatMode() == CombatMode.GUARDIA) {
 			return false;
 		}
@@ -93,7 +95,11 @@ public class BecarioFollowOwnerGoal extends Goal {
 		if (distSq < bestDistSq - 1.0) {
 			bestDistSq = distSq;
 			noProgressTicks = 0;
-		} else if (++noProgressTicks > STUCK_TICKS) {
+		} else if (++noProgressTicks % 20 == 0 && noProgressTicks >= 40 && becario.level() instanceof ServerLevel level) {
+			// Atascado: ¿hay lava o un hueco en el camino? Taparlo como haría un jugador.
+			becario.bridgeToward(level, owner.position());
+		}
+		if (noProgressTicks > STUCK_TICKS) {
 			noProgressTicks = 0;
 			bestDistSq = distSq;
 			long now = becario.level().getGameTime();

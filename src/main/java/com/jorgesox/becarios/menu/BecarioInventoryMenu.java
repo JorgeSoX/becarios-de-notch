@@ -18,24 +18,26 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.equipment.Equippable;
 
 /**
- * Inventario del becario: 27 huecos + armadura (4) + mano (1), y abajo el
+ * Inventario del becario: 27 huecos + armadura (4) + mano derecha + mano
+ * izquierda (escudo, antorcha...), y abajo el
  * inventario del jugador. Se coge y se deja lo que quieras, como en un cofre.
  *
- * Índices de huecos: 0-26 inventario, 27-31 equipo, 32-67 jugador.
+ * Índices de huecos: 0-26 inventario, 27-32 equipo, 33-68 jugador.
+ * La pechera acepta cualquier cosa de esa ranura (también élitros).
  * En el cliente se crean contenedores vacíos; el servidor sincroniza el contenido.
  */
 public class BecarioInventoryMenu extends AbstractContainerMenu {
 	public static final int INV_SLOTS = 27;
-	public static final int EQUIP_SLOTS = 5;
+	public static final int EQUIP_SLOTS = 6;
 	/** Desplazamiento horizontal del cofre para dejar sitio a la columna de equipo. */
 	public static final int OFFSET_X = 22;
 
 	private static final EquipmentSlot[] EQUIP_ORDER = {
-		EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.MAINHAND
+		EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND
 	};
 	private static final Identifier[] EQUIP_ICONS = {
 		InventoryMenu.EMPTY_ARMOR_SLOT_HELMET, InventoryMenu.EMPTY_ARMOR_SLOT_CHESTPLATE,
-		InventoryMenu.EMPTY_ARMOR_SLOT_LEGGINGS, InventoryMenu.EMPTY_ARMOR_SLOT_BOOTS, null
+		InventoryMenu.EMPTY_ARMOR_SLOT_LEGGINGS, InventoryMenu.EMPTY_ARMOR_SLOT_BOOTS, null, InventoryMenu.EMPTY_ARMOR_SLOT_SHIELD
 	};
 
 	private final @Nullable BecarioEntity becario;
@@ -78,7 +80,7 @@ public class BecarioInventoryMenu extends AbstractContainerMenu {
 		this.addStandardInventorySlots(playerInventory, OFFSET_X + 8, 18 + 3 * 18 + 13);
 	}
 
-	/** Hueco de equipo: solo acepta piezas de esa ranura (la mano acepta cualquier cosa). */
+	/** Hueco de equipo: solo acepta piezas de esa ranura (las manos aceptan cualquier cosa). */
 	private static class EquipSlot extends Slot {
 		private final EquipmentSlot type;
 		private final @Nullable Identifier icon;
@@ -91,7 +93,7 @@ public class BecarioInventoryMenu extends AbstractContainerMenu {
 
 		@Override
 		public boolean mayPlace(ItemStack stack) {
-			if (this.type == EquipmentSlot.MAINHAND) {
+			if (this.type == EquipmentSlot.MAINHAND || this.type == EquipmentSlot.OFFHAND) {
 				return true;
 			}
 			Equippable equippable = stack.get(DataComponents.EQUIPPABLE);
@@ -100,7 +102,7 @@ public class BecarioInventoryMenu extends AbstractContainerMenu {
 
 		@Override
 		public int getMaxStackSize() {
-			return this.type == EquipmentSlot.MAINHAND ? 64 : 1;
+			return this.type.getType() == EquipmentSlot.Type.HAND ? 64 : 1;
 		}
 
 		@Override

@@ -52,7 +52,7 @@ public class BecarioMenuScreen extends Screen {
 		this.addRenderableWidget(preview);
 
 		int x = this.left + 96;
-		int y = this.top + 58;
+		int y = this.top + 62;
 		int w = 62;
 		int gap = 4;
 
@@ -158,9 +158,10 @@ public class BecarioMenuScreen extends Screen {
 		g.text(this.font, this.data.name(), this.left + 10, this.top + 9, GuiStyle.TEXT, false);
 		g.text(this.font, "Vida: " + Math.round(this.data.health()) + "/" + Math.round(this.data.maxHealth()),
 			x, this.top + 26, this.data.health() < this.data.maxHealth() / 3 ? GuiStyle.TEXT_RED : GuiStyle.TEXT_GREEN, false);
-		g.text(this.font, "Ahora: " + this.data.status(), x, this.top + 38, GuiStyle.TEXT, false);
-		g.text(this.font, "Trabajo", x, this.top + 101, 0xFF707070, false);
-		g.text(this.font, "Combate", x, this.top + 153, 0xFF707070, false);
+		g.text(this.font, "Ahora: " + this.data.status(), x, this.top + 37, GuiStyle.TEXT, false);
+		g.text(this.font, this.font.plainSubstrByWidth("Dónde: " + this.data.where(), 196), x, this.top + 48, 0xFF505050, false);
+		g.text(this.font, "Trabajo", x, this.top + 105, 0xFF707070, false);
+		g.text(this.font, "Combate", x, this.top + 157, 0xFF707070, false);
 		g.text(this.font, "Darle algo:", this.left + 10, this.top + 134, 0xFF707070, false);
 		g.text(this.font, "Mayús+clic", this.left + 10, this.top + 144, 0xFF707070, false);
 	}
