@@ -41,3 +41,4 @@ replay_*.log
 
 # plantilla original
 *.zip
+*.bundle

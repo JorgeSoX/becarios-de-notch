@@ -124,7 +124,7 @@ public final class BecarioBrain {
 			case "come" -> {
 				becario.cancelTask();
 				becario.setOrderedToSit(false);
-				becario.tryToTeleportToOwner();
+				becario.setComing(true);
 			}
 			case "chop" -> becario.startTask(taskFor("madera", amount));
 			case "mine" -> {

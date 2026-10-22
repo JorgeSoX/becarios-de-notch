@@ -6,6 +6,7 @@ import java.util.UUID;
 import com.jorgesox.becarios.BecarioSkins;
 import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.entity.BecarioRegistry;
+import com.jorgesox.becarios.entity.CombatMode;
 import com.jorgesox.becarios.entity.ModEntities;
 import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
@@ -73,6 +74,17 @@ public final class BecarioCommands {
 				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
 				.then(Commands.literal("inventario").executes(ctx -> inventory(ctx.getSource())))
 				.then(Commands.literal("estado").executes(ctx -> status(ctx.getSource())))
+				.then(Commands.literal("modo")
+					.then(Commands.literal("pasivo").executes(ctx -> mode(ctx.getSource(), CombatMode.PASIVO, 16)))
+					.then(Commands.literal("defensa").executes(ctx -> mode(ctx.getSource(), CombatMode.DEFENSA, 16)))
+					.then(Commands.literal("escolta")
+						.executes(ctx -> mode(ctx.getSource(), CombatMode.ESCOLTA, 16))
+						.then(Commands.argument("radio", IntegerArgumentType.integer(4, 48))
+							.executes(ctx -> mode(ctx.getSource(), CombatMode.ESCOLTA, IntegerArgumentType.getInteger(ctx, "radio")))))
+					.then(Commands.literal("guardia")
+						.executes(ctx -> mode(ctx.getSource(), CombatMode.GUARDIA, 16))
+						.then(Commands.argument("radio", IntegerArgumentType.integer(4, 48))
+							.executes(ctx -> mode(ctx.getSource(), CombatMode.GUARDIA, IntegerArgumentType.getInteger(ctx, "radio"))))))
 			));
 	}
 
@@ -147,6 +159,9 @@ public final class BecarioCommands {
 		}
 		becario.cancelTask();
 		becario.setOrderedToSit(false);
+		if (becario.getCombatMode() == CombatMode.GUARDIA) {
+			becario.setCombatMode(CombatMode.DEFENSA, becario.getGuardRadius(), null);
+		}
 		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": te sigo."), false);
 		return 1;
 	}
@@ -168,8 +183,11 @@ public final class BecarioCommands {
 		}
 		becario.cancelTask();
 		becario.setOrderedToSit(false);
-		becario.tryToTeleportToOwner();
-		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": voy."), false);
+		if (becario.getCombatMode() == CombatMode.GUARDIA) {
+			becario.setCombatMode(CombatMode.DEFENSA, becario.getGuardRadius(), null);
+		}
+		becario.setComing(true);
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": ¡voy corriendo!"), false);
 		return 1;
 	}
 
@@ -183,6 +201,25 @@ public final class BecarioCommands {
 		becario.discard();
 		source.sendSuccess(() -> Component.literal(name + " ha sido despedido"
 			+ (returned > 0 ? " (te devuelve " + returned + " objetos)." : ".")), false);
+		return 1;
+	}
+
+	/** /becario modo <pasivo|defensa|escolta [radio]|guardia [radio]>. La guardia es donde estás tú. */
+	private static int mode(CommandSourceStack source, CombatMode mode, int radius) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		ServerPlayer player = source.getPlayerOrException();
+		becario.setCombatMode(mode, radius, player.blockPosition());
+		String name = becario.getName().getString();
+		String msg = switch (mode) {
+			case PASIVO -> "no pelearé con nadie.";
+			case DEFENSA -> "te defiendo si te atacan y ataco a lo que tú golpees.";
+			case ESCOLTA -> "vigilo " + becario.getGuardRadius() + " bloques a tu alrededor.";
+			case GUARDIA -> "protejo esta zona (" + becario.getGuardRadius() + " bloques). Usa /becario sigue para que vuelva contigo.";
+		};
+		source.sendSuccess(() -> Component.literal(name + ": " + msg), false);
 		return 1;
 	}
 
@@ -247,7 +284,9 @@ public final class BecarioCommands {
 			return 0;
 		}
 		BecarioTask task = becario.getTask();
-		String what = task != null ? task.describe() : (becario.isOrderedToSit() ? "quieto" : "siguiéndote");
+		String what = (task != null ? task.describe() : (becario.isOrderedToSit() ? "quieto" : "siguiéndote"))
+			+ " · modo " + becario.getCombatMode().label()
+			+ " · vida " + Math.round(becario.getHealth()) + "/" + Math.round(becario.getMaxHealth());
 		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": " + what + "."), false);
 		return 1;
 	}

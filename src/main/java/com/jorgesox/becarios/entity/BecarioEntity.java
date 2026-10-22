@@ -19,7 +19,23 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
+import net.minecraft.world.food.FoodProperties;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.goal.target.OwnerHurtByTargetGoal;
+import net.minecraft.world.entity.ai.goal.target.OwnerHurtTargetGoal;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -34,7 +50,7 @@ import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
-import net.minecraft.world.entity.ai.goal.FollowOwnerGoal;
+import net.minecraft.world.entity.ai.goal.OpenDoorGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.SitWhenOrderedToGoal;
@@ -70,12 +86,19 @@ public class BecarioEntity extends TamableAnimal {
 
 	public BecarioEntity(EntityType<? extends BecarioEntity> type, Level level) {
 		super(type, level);
+		// Navegación "de jugador": abre puertas y nada.
+		this.getNavigation().setCanOpenDoors(true);
+		this.getNavigation().setCanFloat(true);
 	}
 
 	public static AttributeSupplier.Builder createAttributes() {
 		return Animal.createAnimalAttributes()
 			.add(Attributes.MOVEMENT_SPEED, 0.3)
-			.add(Attributes.MAX_HEALTH, 20.0);
+			.add(Attributes.MAX_HEALTH, 20.0)
+			// Rango de búsqueda de rutas: permite planificar caminos largos.
+			.add(Attributes.FOLLOW_RANGE, 48.0)
+			// Daño base a puñetazos (como un jugador); el arma en mano suma el suyo.
+			.add(Attributes.ATTACK_DAMAGE, 1.0);
 	}
 
 	@Override
@@ -86,16 +109,113 @@ public class BecarioEntity extends TamableAnimal {
 
 	@Override
 	protected void registerGoals() {
-		// Menor número = mayor prioridad. "Quieto" (2) manda sobre el trabajo (3),
-		// y el trabajo manda sobre seguir al dueño (4).
-		this.goalSelector.addGoal(1, new FloatGoal(this));
+		// Menor número = mayor prioridad. Pelear (1) manda sobre "quieto" (2),
+		// "quieto" sobre trabajar (3), y trabajar sobre seguir al dueño (4).
+		this.goalSelector.addGoal(0, new FloatGoal(this));
+		this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.25, true));
 		this.goalSelector.addGoal(2, new SitWhenOrderedToGoal(this));
+		this.goalSelector.addGoal(2, new OpenDoorGoal(this, true));
 		this.goalSelector.addGoal(3, new BlockMiningGoal(this));
 		this.goalSelector.addGoal(3, new CollectItemsGoal(this));
-		// Empieza a seguir a >8 bloques, se detiene a 2 bloques del dueño.
-		this.goalSelector.addGoal(4, new FollowOwnerGoal(this, 1.0, 8.0F, 2.0F));
+		this.goalSelector.addGoal(3, new FetchThrownItemsGoal(this));
+		this.goalSelector.addGoal(4, new ReturnToPostGoal(this));
+		this.goalSelector.addGoal(4, new BecarioFollowOwnerGoal(this));
 		this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, Player.class, 8.0F));
 		this.goalSelector.addGoal(6, new RandomLookAroundGoal(this));
+
+		// Objetivos de combate (según el modo).
+		this.targetSelector.addGoal(1, new OwnerHurtByTargetGoal(this) {
+			@Override
+			public boolean canUse() {
+				return BecarioEntity.this.fights() && super.canUse();
+			}
+		});
+		this.targetSelector.addGoal(2, new OwnerHurtTargetGoal(this) {
+			@Override
+			public boolean canUse() {
+				return BecarioEntity.this.fights() && super.canUse();
+			}
+		});
+		this.targetSelector.addGoal(3, new HurtByTargetGoal(this) {
+			@Override
+			public boolean canUse() {
+				return BecarioEntity.this.fights() && super.canUse();
+			}
+		});
+		// Escolta/guardia: monstruos que VEA (mustSee = true) dentro del radio.
+		this.targetSelector.addGoal(4, new NearestAttackableTargetGoal<>(this, Mob.class, true,
+			(target, level) -> this.isThreatInZone(target)));
+	}
+
+	/** ¿Pelea en el modo actual? (sentado no pelea, como el lobo). */
+	private boolean fights() {
+		return this.combatMode != CombatMode.PASIVO && !this.isOrderedToSit();
+	}
+
+	/** Monstruo dentro de la zona vigilada (alrededor del dueño o del puesto de guardia). */
+	private boolean isThreatInZone(LivingEntity target) {
+		if (!this.fights() || !(target instanceof Enemy) || target instanceof Creeper) {
+			return false;
+		}
+		double r2 = (double) this.guardRadius * this.guardRadius;
+		if (this.combatMode == CombatMode.ESCOLTA) {
+			LivingEntity owner = this.getOwner();
+			return owner != null && owner.level() == this.level() && target.distanceToSqr(owner) <= r2;
+		}
+		if (this.combatMode == CombatMode.GUARDIA && this.guardPos != null) {
+			return target.blockPosition().distSqr(this.guardPos) <= r2;
+		}
+		return false;
+	}
+
+	/** A quién NO atacar nunca (adaptado del lobo). */
+	@Override
+	public boolean wantsToAttack(LivingEntity target, LivingEntity owner) {
+		if (target instanceof Creeper || target instanceof ArmorStand) {
+			return false;
+		}
+		if (target instanceof TamableAnimal tamed && tamed.isTame()) {
+			return false; // mascotas y otros becarios
+		}
+		if (target instanceof Player victim && owner instanceof Player boss && !boss.canHarmPlayer(victim)) {
+			return false;
+		}
+		return true;
+	}
+
+	@Override
+	public boolean canAttack(LivingEntity target) {
+		return !this.isOwnedBy(target) && super.canAttack(target);
+	}
+
+	// ------------------------------------------------------------ combate
+
+	private CombatMode combatMode = CombatMode.DEFENSA;
+	private @Nullable BlockPos guardPos;
+	private int guardRadius = 16;
+
+	public CombatMode getCombatMode() {
+		return this.combatMode;
+	}
+
+	public @Nullable BlockPos getGuardPos() {
+		return this.guardPos;
+	}
+
+	public int getGuardRadius() {
+		return this.guardRadius;
+	}
+
+	/** Cambia el modo de combate. En GUARDIA, guardPos es el punto a proteger. */
+	public void setCombatMode(CombatMode mode, int radius, @Nullable BlockPos post) {
+		this.combatMode = mode;
+		this.guardRadius = Math.max(4, Math.min(48, radius));
+		this.guardPos = mode == CombatMode.GUARDIA ? post : null;
+		this.setTarget(null);
+		if (mode == CombatMode.GUARDIA) {
+			this.cancelTask();
+			this.setOrderedToSit(false);
+		}
 	}
 
 	// ---------------------------------------------------------------- skin
@@ -106,6 +226,29 @@ public class BecarioEntity extends TamableAnimal {
 
 	public void setSkin(String skinId) {
 		this.entityData.set(DATA_SKIN, BecarioSkins.isValid(skinId) ? skinId : BecarioSkins.DEFAULT);
+	}
+
+	// ------------------------------------------------------- movimiento
+
+	/** Orden "ven": seguir aunque esté cerca, hasta llegar a tu lado. */
+	private boolean coming;
+
+	public boolean isComing() {
+		return this.coming;
+	}
+
+	public void setComing(boolean coming) {
+		this.coming = coming;
+	}
+
+	/** El becario NUNCA se teletransporta: viene andando o corriendo. */
+	@Override
+	public void tryToTeleportToOwner() {
+	}
+
+	@Override
+	public boolean shouldTryTeleportToOwner() {
+		return false;
 	}
 
 	// --------------------------------------------------------------- tareas
@@ -344,6 +487,7 @@ public class BecarioEntity extends TamableAnimal {
 		if (!player.getAbilities().instabuild) {
 			player.setItemInHand(hand, leftover);
 		}
+		this.refreshEquipment();
 		this.tell(Component.literal("guardado " + moved + "x ").append(name).append("."));
 		return InteractionResult.SUCCESS;
 	}
@@ -360,6 +504,14 @@ public class BecarioEntity extends TamableAnimal {
 			items.add(this.inventory.getItem(slot));
 		}
 		output.store("inventory", ItemStack.OPTIONAL_CODEC.listOf(), items);
+
+		output.putString("combat_mode", this.combatMode.name());
+		output.putInt("guard_radius", this.guardRadius);
+		if (this.guardPos != null) {
+			output.putInt("guard_x", this.guardPos.getX());
+			output.putInt("guard_y", this.guardPos.getY());
+			output.putInt("guard_z", this.guardPos.getZ());
+		}
 
 		// Orden de trabajo en curso: se guarda para que sobreviva a reinicios.
 		if (this.task != null) {
@@ -380,6 +532,16 @@ public class BecarioEntity extends TamableAnimal {
 				this.inventory.setItem(slot, items.get(slot));
 			}
 		});
+
+		try {
+			this.combatMode = CombatMode.valueOf(input.getStringOr("combat_mode", CombatMode.DEFENSA.name()));
+		} catch (IllegalArgumentException e) {
+			this.combatMode = CombatMode.DEFENSA;
+		}
+		this.guardRadius = input.getIntOr("guard_radius", 16);
+		if (this.combatMode == CombatMode.GUARDIA) {
+			this.guardPos = new BlockPos(input.getIntOr("guard_x", 0), input.getIntOr("guard_y", 0), input.getIntOr("guard_z", 0));
+		}
 
 		// Restaura la orden de trabajo (si el grupo de bloques ya no existe, se ignora).
 		String kind = input.getStringOr("task_kind", "");
@@ -404,6 +566,117 @@ public class BecarioEntity extends TamableAnimal {
 		super.die(source);
 	}
 
+	// ------------------------------------------- recoger, equipar y comer
+
+	public boolean hasInventorySpace() {
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			if (this.inventory.getItem(slot).isEmpty()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Recoge los objetos que toca (lo que le tiras con Q, drops...), sin depender
+	 * de la regla mobGriefing como los mobs vanilla.
+	 */
+	@Override
+	public void aiStep() {
+		super.aiStep();
+		if (!(this.level() instanceof ServerLevel level) || !this.isAlive() || this.tickCount % 2 != 0) {
+			return;
+		}
+		boolean picked = false;
+		for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, this.getBoundingBox().inflate(1.0, 0.5, 1.0))) {
+			if (entity.isRemoved() || entity.hasPickUpDelay() || entity.getItem().isEmpty()) {
+				continue;
+			}
+			ItemStack stack = entity.getItem();
+			int before = stack.getCount();
+			ItemStack leftover = this.inventory.addItem(stack.copy());
+			int taken = before - leftover.getCount();
+			if (taken > 0) {
+				this.take(entity, taken);
+				stack.shrink(taken);
+				if (stack.isEmpty()) {
+					entity.discard();
+				}
+				picked = true;
+			}
+		}
+		if (picked) {
+			this.refreshEquipment();
+		}
+	}
+
+	/** Daño cuerpo a cuerpo que haría con este objeto en la mano. */
+	private static double attackScore(ItemStack stack) {
+		return stack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY)
+			.compute(Attributes.ATTACK_DAMAGE, 1.0, EquipmentSlot.MAINHAND);
+	}
+
+	/** Puntos de armadura que da este objeto en esa ranura. */
+	private static double armorScore(ItemStack stack, EquipmentSlot slot) {
+		return stack.isEmpty() ? 0.0 : stack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY)
+			.compute(Attributes.ARMOR, 0.0, slot);
+	}
+
+	/** Se pone la mejor armadura que lleve en el inventario. */
+	public void refreshEquipment() {
+		for (EquipmentSlot armorSlot : ARMOR_SLOTS) {
+			for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+				ItemStack candidate = this.inventory.getItem(slot);
+				if (candidate.isEmpty() || this.getEquipmentSlotForItem(candidate) != armorSlot) {
+					continue;
+				}
+				ItemStack worn = this.getItemBySlot(armorSlot);
+				if (armorScore(candidate, armorSlot) > armorScore(worn, armorSlot)) {
+					this.inventory.setItem(slot, worn.copy());
+					this.setItemSlot(armorSlot, candidate.copyWithCount(1));
+					if (candidate.getCount() > 1) {
+						this.storeItem(candidate.copyWithCount(candidate.getCount() - 1));
+					}
+				}
+			}
+		}
+	}
+
+	/** En combate, saca a la mano el arma que más daño hace. */
+	private void equipBestWeapon() {
+		double best = attackScore(this.getMainHandItem());
+		int bestSlot = -1;
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			double score = attackScore(this.inventory.getItem(slot));
+			if (score > best + 0.01) {
+				best = score;
+				bestSlot = slot;
+			}
+		}
+		if (bestSlot >= 0) {
+			ItemStack weapon = this.inventory.getItem(bestSlot).copy();
+			this.inventory.setItem(bestSlot, this.getMainHandItem().copy());
+			this.setItemSlot(EquipmentSlot.MAINHAND, weapon);
+		}
+	}
+
+	/** Si está herido y no está peleando, come algo de su inventario. */
+	private void eatIfHurt(ServerLevel level) {
+		if (this.getHealth() > this.getMaxHealth() - 4.0F || this.getTarget() != null) {
+			return;
+		}
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			ItemStack stack = this.inventory.getItem(slot);
+			FoodProperties food = stack.get(DataComponents.FOOD);
+			if (food != null && food.nutrition() > 0) {
+				this.heal(food.nutrition());
+				stack.shrink(1);
+				this.playSound(SoundEvents.GENERIC_EAT.value(), 0.8F, 1.0F);
+				return;
+			}
+		}
+	}
+
 	// ------------------------------------------------- uno por jugador
 
 	/**
@@ -415,7 +688,16 @@ public class BecarioEntity extends TamableAnimal {
 	@Override
 	public void tick() {
 		super.tick();
-		if (this.tickCount % 100 != 0 || !(this.level() instanceof ServerLevel level)) {
+		if (!(this.level() instanceof ServerLevel level)) {
+			return;
+		}
+		if (this.tickCount % 10 == 0 && this.getTarget() != null) {
+			this.equipBestWeapon();
+		}
+		if (this.tickCount % 60 == 0) {
+			this.eatIfHurt(level);
+		}
+		if (this.tickCount % 100 != 0) {
 			return;
 		}
 		LivingEntity owner = this.getOwner();
