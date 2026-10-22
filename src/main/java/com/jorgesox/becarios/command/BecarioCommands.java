@@ -22,6 +22,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -40,6 +41,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  *   /becario sigue | quieto | ven | despedir
  *   /becario mina <objetivo> [cantidad]   (tala = alias de mina madera)
  *   /becario tala [cantidad] | recoge | para | dame | inventario | estado
+ *   /becario fabrica <objeto> [cantidad]  (consigue materiales, mesa, horno... y lo fabrica)
  */
 public final class BecarioCommands {
 	private static final int MAX_NAME_LENGTH = 32;
@@ -76,6 +78,12 @@ public final class BecarioCommands {
 					.executes(ctx -> mine(ctx.getSource(), "madera", 16))
 					.then(Commands.argument("cantidad", IntegerArgumentType.integer(1, 256))
 						.executes(ctx -> mine(ctx.getSource(), "madera", IntegerArgumentType.getInteger(ctx, "cantidad")))))
+				.then(Commands.literal("fabrica")
+					.then(Commands.argument("objeto", ItemArgument.item(registryAccess))
+						.executes(ctx -> craft(ctx.getSource(), ItemArgument.getItem(ctx, "objeto").item().value(), 1))
+						.then(Commands.argument("cantidad", IntegerArgumentType.integer(1, 256))
+							.executes(ctx -> craft(ctx.getSource(), ItemArgument.getItem(ctx, "objeto").item().value(),
+								IntegerArgumentType.getInteger(ctx, "cantidad"))))))
 				.then(Commands.literal("recoge").executes(ctx -> collect(ctx.getSource())))
 				.then(Commands.literal("para").executes(ctx -> stopTask(ctx.getSource())))
 				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
@@ -264,6 +272,18 @@ public final class BecarioCommands {
 		return 1;
 	}
 
+	/** /becario fabrica <objeto> [cantidad]: consigue todo lo necesario y lo fabrica. */
+	private static int craft(CommandSourceStack source, net.minecraft.world.item.Item item, int amount) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		becario.startCraft(item, amount);
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": voy a fabricar " + amount + "x ")
+			.append(new ItemStack(item).getHoverName()).append("."), false);
+		return 1;
+	}
+
 	private static int collect(CommandSourceStack source) throws CommandSyntaxException {
 		BecarioEntity becario = requireBecario(source);
 		if (becario == null) {
@@ -327,8 +347,15 @@ public final class BecarioCommands {
 	/** Qué está haciendo ahora mismo, en una frase corta. */
 	public static String statusLine(BecarioEntity becario) {
 		BecarioTask task = becario.getTask();
+		com.jorgesox.becarios.craft.CraftOrder order = becario.getCraftOrder();
+		if (task != null && order != null) {
+			return order.describe() + " (" + task.describe() + ")";
+		}
 		if (task != null) {
 			return task.describe();
+		}
+		if (order != null) {
+			return order.describe();
 		}
 		if (becario.getCombatMode() == CombatMode.GUARDIA) {
 			return "de guardia";

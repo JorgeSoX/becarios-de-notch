@@ -4,6 +4,7 @@ import java.util.function.Predicate;
 
 import org.jspecify.annotations.Nullable;
 
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -28,6 +29,11 @@ public final class BecarioTask {
 	public int expeditions;
 	/** Ticks dedicados a buscar (explorar/excavar): se rinde al agotar el presupuesto. */
 	public int searchTicks;
+	/** Es una parte de un encargo de fabricación (conseguir materia prima): al acabar, sigue con él. */
+	public boolean forCraft;
+	/** Para un encargo: basta con llevar encima `gatherUntil` objetos que cumplan esto (aunque salgan al cavar el camino). */
+	public @Nullable Predicate<ItemStack> gatherItems;
+	public int gatherUntil;
 
 	private BecarioTask(Kind kind, String label, @Nullable Predicate<BlockState> blocks, int target) {
 		this.kind = kind;

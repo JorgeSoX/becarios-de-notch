@@ -94,7 +94,7 @@ public class BlockMiningGoal extends Goal {
 		}
 		ServerLevel level = (ServerLevel) becario.level();
 
-		if (task.done >= task.target) {
+		if (task.done >= task.target || becario.gatheredEnough(task)) {
 			becario.finishTask("listo: " + task.done + " de " + task.label + ".");
 			return;
 		}
@@ -153,8 +153,8 @@ public class BlockMiningGoal extends Goal {
 
 		if (breakTicks == 0) {
 			if (!becario.equipBestToolFor(state)) {
-				becario.finishTask("necesito una herramienta adecuada para " + task.label
-					+ ". Dame un pico o un hacha (clic derecho sobre mí con ella en la mano).");
+				becario.needToolFor(state, "necesito una herramienta adecuada para " + task.label
+					+ ". Dame un pico o un hacha (Mayús + clic derecho sobre mí con ella).");
 				return;
 			}
 			ticksNeeded = computeBreakTicks(level, state);
@@ -238,6 +238,10 @@ public class BlockMiningGoal extends Goal {
 		ignored.values().removeIf(until -> until < now);
 
 		BlockPos origin = becario.blockPosition();
+		// Minerales: solo los que están a la vista (con aire al lado). Los enterrados
+		// los encuentra ExpeditionGoal cavando, como haría un jugador.
+		BlockGroups.Group group = BlockGroups.get(task.label);
+		boolean onlyExposed = group != null && group.search() == BlockGroups.Search.UNDERGROUND;
 		List<BlockPos> candidates = new ArrayList<>();
 		for (BlockPos p : BlockPos.betweenClosed(
 			origin.offset(-SEARCH_RADIUS, -SEARCH_HEIGHT, -SEARCH_RADIUS),
@@ -246,7 +250,7 @@ public class BlockMiningGoal extends Goal {
 				continue;
 			}
 			BlockPos pos = p.immutable();
-			if (!ignored.containsKey(pos) && isSafe(level, pos)) {
+			if (!ignored.containsKey(pos) && isSafe(level, pos) && (!onlyExposed || isExposed(level, pos))) {
 				candidates.add(pos);
 			}
 		}
@@ -280,6 +284,15 @@ public class BlockMiningGoal extends Goal {
 		}
 		Node end = path.getEndNode();
 		return end != null && end.asBlockPos().distSqr(pos) <= 3.5 * 3.5;
+	}
+
+	private static boolean isExposed(ServerLevel level, BlockPos pos) {
+		for (Direction direction : Direction.values()) {
+			if (level.getBlockState(pos.relative(direction)).isAir()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** No rompe el suelo que pisa ni bloques pegados a agua/lava (evita inundaciones y caídas). */

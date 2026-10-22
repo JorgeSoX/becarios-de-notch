@@ -33,7 +33,8 @@ public final class BlockGroups {
 	static {
 		// Alturas típicas de cada mineral en el mundo normal (dónde más abunda).
 		put("madera", s -> s.is(BlockTags.LOGS), Search.SURFACE, 0);
-		put("piedra", s -> s.is(BlockTags.BASE_STONE_OVERWORLD), Search.UNDERGROUND, 50);
+		// Piedra = la que suelta roca (cobblestone): piedra normal y de pizarra profunda.
+		put("piedra", any(Blocks.STONE, Blocks.DEEPSLATE, Blocks.COBBLESTONE, Blocks.COBBLED_DEEPSLATE), Search.UNDERGROUND, 50);
 		put("tierra", s -> s.is(BlockTags.DIRT), Search.SURFACE, 0);
 		put("arena", s -> s.is(BlockTags.SAND), Search.SURFACE, 0);
 		put("carbon", any(Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE), Search.UNDERGROUND, 40);

@@ -80,7 +80,7 @@ public class CollectItemsGoal extends Goal {
 				target = null;
 			} else {
 				target.setItem(leftover);
-				becario.finishTask("tengo el inventario lleno. He recogido " + task.done + " objetos.");
+				becario.failTask("tengo el inventario lleno. He recogido " + task.done + " objetos.");
 			}
 			return;
 		}

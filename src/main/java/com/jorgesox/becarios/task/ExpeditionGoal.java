@@ -142,12 +142,12 @@ public class ExpeditionGoal extends Goal {
 		if (task == null || task.blocks == null || !(becario.level() instanceof ServerLevel level)) {
 			return;
 		}
-		if (task.done >= task.target) {
+		if (task.done >= task.target || becario.gatheredEnough(task)) {
 			becario.finishTask("listo: " + task.done + " de " + task.label + ". Vuelvo contigo.");
 			return;
 		}
 		if (!becario.hasInventorySpace()) {
-			becario.finishTask("tengo el inventario lleno. Llevo " + task.done + " de " + task.label + ". Vuelvo contigo.");
+			becario.failTask("tengo el inventario lleno. Llevo " + task.done + " de " + task.label + ". Vuelvo contigo.");
 			return;
 		}
 		ticks++;
@@ -288,7 +288,7 @@ public class ExpeditionGoal extends Goal {
 		}
 		Breaker.Result result = breaker.tick(level, next, next.equals(ore));
 		if (result == Breaker.Result.NO_TOOL) {
-			becario.finishTask("necesito un pico adecuado para " + task.label
+			becario.needToolFor(level.getBlockState(next), "necesito un pico adecuado para " + task.label
 				+ ". Dámelo (Mayús + clic derecho sobre mí con él).");
 		} else if (result == Breaker.Result.UNBREAKABLE) {
 			badOres.add(ore);

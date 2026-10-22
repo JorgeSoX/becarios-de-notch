@@ -87,6 +87,8 @@ public class BecarioEntity extends TamableAnimal {
 	private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
 	/** Orden de trabajo actual (solo servidor, no se guarda). */
 	private @Nullable BecarioTask task;
+	/** Encargo de fabricación en curso (CraftGoal); mientras, `task` puede ser la recogida de materia prima. */
+	private com.jorgesox.becarios.craft.@Nullable CraftOrder craftOrder;
 
 	public BecarioEntity(EntityType<? extends BecarioEntity> type, Level level) {
 		super(type, level);
@@ -122,6 +124,7 @@ public class BecarioEntity extends TamableAnimal {
 		this.goalSelector.addGoal(3, new BlockMiningGoal(this));
 		this.goalSelector.addGoal(3, new ExpeditionGoal(this));
 		this.goalSelector.addGoal(3, new CollectItemsGoal(this));
+		this.goalSelector.addGoal(3, new com.jorgesox.becarios.craft.CraftGoal(this));
 		this.goalSelector.addGoal(3, new FetchThrownItemsGoal(this));
 		this.goalSelector.addGoal(4, new ReturnToPostGoal(this));
 		this.goalSelector.addGoal(4, new ReturnAlongTrailGoal(this));
@@ -263,20 +266,116 @@ public class BecarioEntity extends TamableAnimal {
 		return this.task;
 	}
 
-	/** Empieza una orden de trabajo; si estaba "quieto", se levanta. */
+	/** Empieza una orden de trabajo; si estaba "quieto", se levanta. Una orden nueva del dueño anula el encargo. */
 	public void startTask(BecarioTask newTask) {
+		if (!newTask.forCraft) {
+			this.craftOrder = null;
+		}
 		this.task = newTask;
 		this.setOrderedToSit(false);
 	}
 
-	/** Cancela el trabajo en curso sin avisar. */
+	/** Cancela el trabajo (y el encargo de fabricación) sin avisar. */
 	public void cancelTask() {
 		this.task = null;
+		this.craftOrder = null;
 		this.getNavigation().stop();
 	}
 
-	/** Termina el trabajo y avisa al dueño. */
+	/**
+	 * Termina el trabajo con éxito y avisa al dueño. Si era parte de un encargo
+	 * de fabricación, no vuelve: sigue con el encargo.
+	 */
 	public void finishTask(String message) {
+		BecarioTask finished = this.task;
+		this.task = null;
+		this.getNavigation().stop();
+		if (finished != null && finished.forCraft && this.craftOrder != null) {
+			this.tell("ya tengo " + finished.done + " de " + finished.label + ". Sigo con el encargo.");
+			return;
+		}
+		this.tell(message);
+	}
+
+	/** El trabajo no puede seguir (inventario lleno...): se abandona todo, también el encargo. */
+	public void failTask(String message) {
+		this.task = null;
+		this.craftOrder = null;
+		this.getNavigation().stop();
+		this.tell(message);
+	}
+
+	/**
+	 * Le falta el pico adecuado para un bloque. En una orden normal de minar,
+	 * se fabrica el pico más básico que sirva (con todo lo que haga falta) y
+	 * luego retoma la orden. Si ya estaba fabricando, se rinde.
+	 */
+	public void needToolFor(BlockState state, String message) {
+		BecarioTask current = this.task;
+		net.minecraft.world.item.Item pick = com.jorgesox.becarios.craft.Gatherables.basicPickaxeFor(state);
+		if (current == null || current.forCraft || this.craftOrder != null || pick == null) {
+			this.failTask(message);
+			return;
+		}
+		current.needsExpedition = false;
+		this.task = null;
+		this.getNavigation().stop();
+		this.craftOrder = new com.jorgesox.becarios.craft.CraftOrder(pick, this.countItem(pick) + 1, 1);
+		this.craftOrder.resume = current;
+		this.tell(Component.literal("no tengo pico para esto. Me fabrico ")
+			.append(new ItemStack(pick).getHoverName()).append(" y sigo."));
+	}
+
+	/** ¿Ya lleva encima lo que buscaba para el encargo? */
+	public boolean gatheredEnough(BecarioTask t) {
+		if (t.gatherItems == null) {
+			return false;
+		}
+		int count = 0;
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			ItemStack stack = this.inventory.getItem(slot);
+			if (t.gatherItems.test(stack)) {
+				count += stack.getCount();
+			}
+		}
+		for (ItemStack stack : new ItemStack[] {this.getMainHandItem(), this.getOffhandItem()}) {
+			if (t.gatherItems.test(stack)) {
+				count += stack.getCount();
+			}
+		}
+		return count >= t.gatherUntil;
+	}
+
+	public com.jorgesox.becarios.craft.@Nullable CraftOrder getCraftOrder() {
+		return this.craftOrder;
+	}
+
+	/** Nuevo encargo: tener `amount` más de ese objeto. */
+	public void startCraft(net.minecraft.world.item.Item item, int amount) {
+		this.task = null;
+		this.craftOrder = new com.jorgesox.becarios.craft.CraftOrder(item, this.countItem(item) + amount, amount);
+		this.setOrderedToSit(false);
+		this.getNavigation().stop();
+	}
+
+	/** Encargo terminado: avisa y, si había un trabajo pendiente, lo retoma. */
+	public void completeCraft() {
+		com.jorgesox.becarios.craft.CraftOrder order = this.craftOrder;
+		this.craftOrder = null;
+		if (order == null) {
+			return;
+		}
+		Component itemName = new ItemStack(order.item).getHoverName();
+		if (order.resume != null) {
+			this.task = order.resume;
+			this.tell(Component.literal("ya tengo ").append(itemName).append(". Sigo con " + order.resume.label + "."));
+		} else {
+			this.tell(Component.literal("listo: he fabricado " + order.asked + "x ").append(itemName).append("."));
+		}
+	}
+
+	public void failCraft(Component message) {
+		this.craftOrder = null;
 		this.task = null;
 		this.getNavigation().stop();
 		this.tell(message);
@@ -543,7 +642,18 @@ public class BecarioEntity extends TamableAnimal {
 		}
 
 		// Orden de trabajo en curso: se guarda para que sobreviva a reinicios.
+		if (this.craftOrder != null) {
+			output.putString("craft_item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(this.craftOrder.item).toString());
+			output.putInt("craft_total", this.craftOrder.total);
+			output.putInt("craft_asked", this.craftOrder.asked);
+			if (this.craftOrder.resume != null) {
+				output.putString("craft_resume_label", this.craftOrder.resume.label);
+				output.putInt("craft_resume_target", this.craftOrder.resume.target);
+				output.putInt("craft_resume_done", this.craftOrder.resume.done);
+			}
+		}
 		if (this.task != null) {
+			output.putBoolean("task_for_craft", this.task.forCraft);
 			output.putString("task_kind", this.task.kind.name());
 			output.putString("task_label", this.task.label);
 			output.putInt("task_target", this.task.target);
@@ -582,7 +692,24 @@ public class BecarioEntity extends TamableAnimal {
 			if (group != null) {
 				this.task = BecarioTask.mine(group.label(), group.test(), input.getIntOr("task_target", 1));
 				this.task.done = input.getIntOr("task_done", 0);
+				this.task.forCraft = input.getBooleanOr("task_for_craft", false);
 			}
+		}
+
+		// Encargo de fabricación.
+		String craftItem = input.getStringOr("craft_item", "");
+		net.minecraft.resources.Identifier craftId = craftItem.isEmpty() ? null : net.minecraft.resources.Identifier.tryParse(craftItem);
+		if (craftId != null && net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(craftId)) {
+			this.craftOrder = new com.jorgesox.becarios.craft.CraftOrder(
+				net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(craftId),
+				input.getIntOr("craft_total", 1), input.getIntOr("craft_asked", 1));
+			BlockGroups.Group resume = BlockGroups.get(input.getStringOr("craft_resume_label", ""));
+			if (resume != null) {
+				this.craftOrder.resume = BecarioTask.mine(resume.label(), resume.test(), input.getIntOr("craft_resume_target", 1));
+				this.craftOrder.resume.done = input.getIntOr("craft_resume_done", 0);
+			}
+		} else if (this.task != null && this.task.forCraft) {
+			this.task.forCraft = false;
 		}
 	}
 
@@ -713,7 +840,14 @@ public class BecarioEntity extends TamableAnimal {
 
 	/** Cuántas unidades de ese objeto lleva en el inventario. */
 	public int countItem(net.minecraft.world.item.Item item) {
-		return this.inventory.countItem(item);
+		int count = this.inventory.countItem(item);
+		if (this.getMainHandItem().is(item)) {
+			count += this.getMainHandItem().getCount();
+		}
+		if (this.getOffhandItem().is(item)) {
+			count += this.getOffhandItem().getCount();
+		}
+		return count;
 	}
 
 	public boolean hasInventorySpace() {
@@ -850,7 +984,7 @@ public class BecarioEntity extends TamableAnimal {
 		}
 		// Trabajando lejos (o volviendo): mantener cargada su zona, igual que un
 		// jugador carga los chunks a su alrededor. Si no, se "congelaría" al alejarse.
-		if (this.tickCount % 20 == 0 && (this.task != null || !this.trail.isEmpty())) {
+		if (this.tickCount % 20 == 0 && (this.task != null || this.craftOrder != null || !this.trail.isEmpty())) {
 			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
 				net.minecraft.world.level.ChunkPos.containing(this.blockPosition()), 2);
 		}
