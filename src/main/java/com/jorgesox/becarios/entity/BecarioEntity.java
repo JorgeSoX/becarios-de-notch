@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.jorgesox.becarios.BecarioSkins;
+import com.jorgesox.becarios.command.BecarioCommands;
 import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
 import com.jorgesox.becarios.task.BlockMiningGoal;
@@ -443,8 +444,8 @@ public class BecarioEntity extends TamableAnimal {
 	}
 
 	/**
-	 * Clic derecho del dueño: con un objeto en la mano se lo guarda (herramientas,
-	 * materiales...); con la mano vacía cuenta lo que lleva.
+	 * Clic derecho del dueño: abre el menú del becario.
+	 * Mayús + clic derecho con un objeto: se lo da (armadura = se la pone).
 	 */
 	@Override
 	public InteractionResult mobInteract(Player player, InteractionHand hand) {
@@ -455,9 +456,12 @@ public class BecarioEntity extends TamableAnimal {
 			return InteractionResult.SUCCESS;
 		}
 
+		// Clic derecho normal: abre su menú. Mayús + clic con un objeto: se lo das directamente.
 		ItemStack held = player.getItemInHand(hand);
-		if (held.isEmpty()) {
-			this.tell(this.inventorySummary());
+		if (held.isEmpty() || !player.isShiftKeyDown()) {
+			if (hand == InteractionHand.MAIN_HAND && player instanceof ServerPlayer serverPlayer) {
+				BecarioCommands.openMenu(serverPlayer, this);
+			}
 			return InteractionResult.SUCCESS;
 		}
 

@@ -8,6 +8,8 @@ import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.entity.BecarioRegistry;
 import com.jorgesox.becarios.entity.CombatMode;
 import com.jorgesox.becarios.entity.ModEntities;
+import com.jorgesox.becarios.menu.BecarioInventoryMenu;
+import com.jorgesox.becarios.network.BecarioNetwork;
 import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -15,6 +17,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -23,6 +26,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
@@ -30,6 +34,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  * Comandos del becario. Cada jugador solo controla SU becario
  * (se busca por dueño, así que nadie puede dar órdenes al de otro).
  *
+ *   /becario contratar                    (pantalla para elegir nombre y skin)
  *   /becario invocar <nombre> <skin>
  *   /becario sigue | quieto | ven | despedir
  *   /becario mina <objetivo> [cantidad]   (tala = alias de mina madera)
@@ -44,6 +49,7 @@ public final class BecarioCommands {
 	public static void register() {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 			dispatcher.register(Commands.literal("becario")
+				.then(Commands.literal("contratar").executes(ctx -> openHire(ctx.getSource())))
 				.then(Commands.literal("invocar")
 					.then(Commands.argument("nombre", StringArgumentType.string())
 						.then(Commands.argument("skin", StringArgumentType.word())
@@ -269,12 +275,18 @@ public final class BecarioCommands {
 		return 1;
 	}
 
+	/** /becario inventario: abre la pantalla de inventario del becario. */
 	private static int inventory(CommandSourceStack source) throws CommandSyntaxException {
 		BecarioEntity becario = requireBecario(source);
 		if (becario == null) {
 			return 0;
 		}
-		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": ").append(becario.inventorySummary()), false);
+		ServerPlayer player = source.getPlayerOrException();
+		if (becario.distanceToSqr(player) > 64.0) {
+			source.sendFailure(Component.literal(becario.getName().getString() + " está demasiado lejos para ver su inventario."));
+			return 0;
+		}
+		openInventory(player, becario);
 		return 1;
 	}
 
@@ -283,12 +295,88 @@ public final class BecarioCommands {
 		if (becario == null) {
 			return 0;
 		}
-		BecarioTask task = becario.getTask();
-		String what = (task != null ? task.describe() : (becario.isOrderedToSit() ? "quieto" : "siguiéndote"))
+		String what = statusLine(becario)
 			+ " · modo " + becario.getCombatMode().label()
 			+ " · vida " + Math.round(becario.getHealth()) + "/" + Math.round(becario.getMaxHealth());
 		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": " + what + "."), false);
 		return 1;
+	}
+
+	// ----------------------------------------------------- pantallas (GUI)
+
+	/** Qué está haciendo ahora mismo, en una frase corta. */
+	public static String statusLine(BecarioEntity becario) {
+		BecarioTask task = becario.getTask();
+		if (task != null) {
+			return task.describe();
+		}
+		if (becario.getCombatMode() == CombatMode.GUARDIA) {
+			return "de guardia";
+		}
+		return becario.isOrderedToSit() ? "quieto" : "siguiéndote";
+	}
+
+	private static int openHire(CommandSourceStack source) throws CommandSyntaxException {
+		ServerPlayer player = source.getPlayerOrException();
+		if (findOwned(player) != null) {
+			source.sendFailure(Component.literal("Ya tienes un becario. Usa /becario despedir si quieres otro."));
+			return 0;
+		}
+		ServerPlayNetworking.send(player, new BecarioNetwork.OpenHire());
+		return 1;
+	}
+
+	/** Abre el menú del becario (clic derecho sobre él). */
+	public static void openMenu(ServerPlayer player, BecarioEntity becario) {
+		ServerPlayNetworking.send(player, new BecarioNetwork.OpenMenu(
+			becario.getName().getString(), becario.getSkin(), becario.getHealth(), becario.getMaxHealth(),
+			becario.getCombatMode().name(), statusLine(becario)));
+	}
+
+	public static void openInventory(ServerPlayer player, BecarioEntity becario) {
+		player.openMenu(new SimpleMenuProvider(
+			(id, playerInventory, p) -> BecarioInventoryMenu.server(id, playerInventory, becario),
+			Component.literal("Inventario de " + becario.getName().getString())));
+	}
+
+	/** La pantalla de contratar envía nombre + skin: mismas validaciones que /becario invocar. */
+	public static void hireFromScreen(ServerPlayer player, String name, String skin) {
+		try {
+			summon(player.createCommandSourceStack(), name, skin);
+		} catch (CommandSyntaxException e) {
+			player.sendSystemMessage(Component.literal(e.getMessage()));
+		}
+	}
+
+	/** Un botón del menú del becario: se traduce a la misma lógica que los comandos. */
+	public static void actionFromScreen(ServerPlayer player, String action, String arg, int amount) {
+		CommandSourceStack source = player.createCommandSourceStack();
+		int clamped = Math.max(1, Math.min(256, amount));
+		try {
+			switch (action) {
+				case "sigue" -> follow(source);
+				case "quieto" -> stay(source);
+				case "ven" -> come(source);
+				case "para" -> stopTask(source);
+				case "recoge" -> collect(source);
+				case "dame" -> giveAll(source);
+				case "despedir" -> dismiss(source);
+				case "tala" -> mine(source, "madera", clamped);
+				case "mina" -> mine(source, arg, clamped);
+				case "inventario" -> inventory(source);
+				case "modo" -> {
+					CombatMode mode = CombatMode.valueOf(arg);
+					mode(source, mode, Math.max(4, Math.min(48, amount)));
+					BecarioEntity becario = findOwned(player);
+					if (becario != null) {
+						openMenu(player, becario); // refresca el menú abierto
+					}
+				}
+				default -> { }
+			}
+		} catch (CommandSyntaxException | IllegalArgumentException e) {
+			player.sendSystemMessage(Component.literal("No se pudo hacer: " + e.getMessage()));
+		}
 	}
 
 	/** Devuelve el becario del jugador que ejecuta el comando; si no tiene, avisa y devuelve null. */

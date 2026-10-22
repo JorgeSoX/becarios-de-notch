@@ -2,6 +2,8 @@ package com.jorgesox.becarios;
 
 import com.jorgesox.becarios.command.BecarioCommands;
 import com.jorgesox.becarios.entity.ModEntities;
+import com.jorgesox.becarios.menu.ModMenus;
+import com.jorgesox.becarios.network.BecarioNetwork;
 
 import net.fabricmc.api.ModInitializer;
 
@@ -25,6 +27,8 @@ public class BecariosDeNotch implements ModInitializer {
 		// Proceed with mild caution.
 
 		ModEntities.register();
+		ModMenus.register();
+		BecarioNetwork.register();
 		BecarioCommands.register();
 
 		LOGGER.info("Becarios de Notch cargado.");

@@ -32,12 +32,67 @@ dependencies {
 }
 
 processResources {
+	// Las skins generadas pueden coincidir con las antiguas de src/: gana la primera.
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	def version = project.version
 	inputs.property "version", version
 
 	filesMatching("fabric.mod.json") {
 		expand "version": version
 	}
+}
+
+
+// ---------------------------------------------------------------------------
+// Catálogo de skins: deja PNGs de 64x64 en la carpeta "skins/" del proyecto.
+// El nombre del archivo es el nombre que se ve en el juego ("Walter White.png").
+// Esta tarea los copia a los recursos del mod y genera skins.json.
+// ---------------------------------------------------------------------------
+def skinsSourceDir = file("skins")
+def skinsOutputDir = layout.buildDirectory.dir("generated/skins")
+
+tasks.register("generateSkins") {
+	inputs.files(fileTree(skinsSourceDir) { include "*.png" })
+	outputs.dir(skinsOutputDir)
+	def outDirProvider = skinsOutputDir
+	def srcDir = skinsSourceDir
+	doLast {
+		def out = outDirProvider.get().asFile
+		out.deleteDir()
+		def texDir = new File(out, "assets/becarios-de-notch/textures/entity/becario")
+		texDir.mkdirs()
+		def entries = []
+		def seen = [] as Set
+		def files = (srcDir.listFiles() ?: []).findAll { it.name.toLowerCase().endsWith(".png") }.sort { it.name.toLowerCase() }
+		files.each { f ->
+			def img = javax.imageio.ImageIO.read(f)
+			if (img == null || img.width != 64 || img.height != 64) {
+				println "[skins] Ignorada (no es un PNG de 64x64): ${f.name}"
+				return
+			}
+			def name = f.name.substring(0, f.name.length() - 4).trim()
+			def id = java.text.Normalizer.normalize(name.toLowerCase(), java.text.Normalizer.Form.NFD)
+				.replaceAll(/\p{M}/, "")
+				.replaceAll(/[^a-z0-9]+/, "_")
+				.replaceAll(/^_+|_+$/, "")
+			if (!id || seen.contains(id)) {
+				println "[skins] Ignorada (nombre vacío o repetido): ${f.name}"
+				return
+			}
+			seen << id
+			java.nio.file.Files.copy(f.toPath(), new File(texDir, id + ".png").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+			entries << [id: id, name: name]
+		}
+		new File(out, "assets/becarios-de-notch/skins.json").setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(entries)), "UTF-8")
+		println "[skins] ${entries.size()} skins en el catálogo"
+	}
+}
+
+sourceSets.main.resources.srcDir(skinsOutputDir)
+tasks.named("processResources") { dependsOn("generateSkins") }
+tasks.matching { it.name == "sourcesJar" }.configureEach {
+	dependsOn("generateSkins")
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.withType(JavaCompile).configureEach {
