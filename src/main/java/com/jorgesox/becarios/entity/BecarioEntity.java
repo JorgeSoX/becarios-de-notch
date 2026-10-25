@@ -82,6 +82,14 @@ public class BecarioEntity extends TamableAnimal {
 	private static final EntityDataAccessor<String> DATA_SKIN =
 		SynchedEntityData.defineId(BecarioEntity.class, EntityDataSerializers.STRING);
 
+	/**
+	 * Hacia dónde trabaja (cavando un túnel/escalera, picando un bloque): -1 = libre.
+	 * Sincronizado para que el cliente gire el cuerpo igual (si no, el cuerpo
+	 * "baila" a los lados mientras se recoloca en cada paso).
+	 */
+	private static final EntityDataAccessor<Integer> DATA_WORK_FACING =
+		SynchedEntityData.defineId(BecarioEntity.class, EntityDataSerializers.INT);
+
 	private static final int INVENTORY_SIZE = 27;
 
 	private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
@@ -111,6 +119,36 @@ public class BecarioEntity extends TamableAnimal {
 	protected void defineSynchedData(SynchedEntityData.Builder entityData) {
 		super.defineSynchedData(entityData);
 		entityData.define(DATA_SKIN, BecarioSkins.DEFAULT);
+		entityData.define(DATA_WORK_FACING, -1);
+	}
+
+	/** Fija (o suelta, con null) la dirección en la que trabaja: el cuerpo mira hacia ahí. */
+	public void setWorkFacing(net.minecraft.core.@Nullable Direction facing) {
+		int value = facing != null && facing.getAxis().isHorizontal() ? facing.get2DDataValue() : -1;
+		if (this.entityData.get(DATA_WORK_FACING) != value) {
+			this.entityData.set(DATA_WORK_FACING, value);
+		}
+	}
+
+	@Override
+	protected net.minecraft.world.entity.ai.control.BodyRotationControl createBodyControl() {
+		return new net.minecraft.world.entity.ai.control.BodyRotationControl(this) {
+			@Override
+			public void clientTick() {
+				int work = BecarioEntity.this.entityData.get(DATA_WORK_FACING);
+				if (work < 0) {
+					super.clientTick();
+					return;
+				}
+				// Trabajando: el cuerpo, recto hacia donde cava (girando suave), y la
+				// cabeza libre para mirar el bloque, pero sin pasar de 60° a los lados.
+				BecarioEntity self = BecarioEntity.this;
+				float target = net.minecraft.core.Direction.from2DDataValue(work).toYRot();
+				self.yBodyRot = net.minecraft.util.Mth.approachDegrees(self.yBodyRot, target, 15.0F);
+				float head = net.minecraft.util.Mth.wrapDegrees(self.yHeadRot - self.yBodyRot);
+				self.yHeadRot = self.yBodyRot + net.minecraft.util.Mth.clamp(head, -60.0F, 60.0F);
+			}
+		};
 	}
 
 	@Override

@@ -83,6 +83,7 @@ public class BlockMiningGoal extends Goal {
 	public void stop() {
 		clearProgress();
 		target = null;
+		becario.setWorkFacing(null);
 		becario.getNavigation().stop();
 	}
 
@@ -132,6 +133,7 @@ public class BlockMiningGoal extends Goal {
 		becario.getLookControl().setLookAt(center.x, center.y, center.z);
 
 		if (becario.getEyePosition().distanceToSqr(center) > REACH_SQ) {
+			becario.setWorkFacing(null); // andando: el cuerpo sigue al movimiento
 			// Aún lejos: caminar (recalculando la ruta cada medio segundo).
 			if (stuckTicks % 10 == 0) {
 				becario.getNavigation().moveTo(center.x, center.y, center.z, 1.0);
@@ -145,6 +147,9 @@ public class BlockMiningGoal extends Goal {
 		}
 
 		becario.getNavigation().stop();
+		// Picando: el cuerpo de cara al bloque (la cabeza ya lo mira).
+		becario.setWorkFacing(net.minecraft.core.Direction.getApproximateNearest(
+			center.x - becario.getX(), 0, center.z - becario.getZ()));
 		mineStep(level, task);
 	}
 

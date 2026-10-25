@@ -118,6 +118,7 @@ public class ExpeditionGoal extends Goal {
 		if (becario.level() instanceof ServerLevel level) {
 			breaker.reset(level);
 		}
+		becario.setWorkFacing(null);
 		becario.getNavigation().stop();
 	}
 
@@ -160,9 +161,11 @@ public class ExpeditionGoal extends Goal {
 				+ ", estoy a altura " + becario.getBlockY() + ").");
 		}
 		if (isSurface(task)) {
+			becario.setWorkFacing(null);
 			tickSurface(level, task);
 		} else {
 			tickUnderground(level, task);
+			becario.setWorkFacing(dir);
 		}
 	}
 

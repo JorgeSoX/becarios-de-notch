@@ -70,7 +70,19 @@ public final class CraftPlanner {
 
 	/** Plan para llegar a tener `total` unidades de `item` (contando lo que ya lleva). */
 	public static Plan plan(ServerLevel level, BecarioEntity becario, Item item, int total) {
-		CraftPlanner planner = new CraftPlanner(RecipeIndex.of(level), snapshot(becario));
+		return plan(level, becario, item, total, Set.of());
+	}
+
+	/**
+	 * Igual, contando además las estaciones (mesa, horno) que ya hay puestas cerca:
+	 * no hace falta fabricar otra mientras esa siga ahí.
+	 */
+	public static Plan plan(ServerLevel level, BecarioEntity becario, Item item, int total, Set<Item> stationsNearby) {
+		Map<Item, Integer> have = snapshot(becario);
+		for (Item station : stationsNearby) {
+			have.merge(station, 1, Integer::sum);
+		}
+		CraftPlanner planner = new CraftPlanner(RecipeIndex.of(level), have);
 		boolean ok = planner.need(Set.of(item), total, new HashSet<>(), 0);
 		return new Plan(planner.steps, ok ? null : (planner.missing != null ? planner.missing : item));
 	}

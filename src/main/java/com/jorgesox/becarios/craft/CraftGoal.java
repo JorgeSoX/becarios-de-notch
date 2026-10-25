@@ -117,7 +117,14 @@ public class CraftGoal extends Goal {
 	// ----------------------------------------------------------------- plan
 
 	private void plan(ServerLevel level, CraftOrder order) {
-		CraftPlanner.Plan plan = CraftPlanner.plan(level, becario, order.item, order.total);
+		Set<Item> nearby = new java.util.HashSet<>();
+		if (findStation(level, Blocks.CRAFTING_TABLE, false) != null) {
+			nearby.add(Items.CRAFTING_TABLE);
+		}
+		if (findStation(level, Blocks.FURNACE, true) != null) {
+			nearby.add(Items.FURNACE);
+		}
+		CraftPlanner.Plan plan = CraftPlanner.plan(level, becario, order.item, order.total, nearby);
 		if (!plan.ok()) {
 			becario.failCraft(Component.literal("no sé cómo conseguir ").append(name(plan.missing()))
 				.append(" para fabricar ").append(name(order.item)).append(". Lo dejo."));

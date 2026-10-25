@@ -25,16 +25,18 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 /**
  * Antorchas en los túneles, como un jugador: cuando el sitio donde está se ha
- * quedado oscuro (luz de bloque &lt; 8, que es cuando ya pueden aparecer monstruos
- * cerca), pega una antorcha en la pared a la altura de la cabeza (o en el suelo).
+ * quedado oscuro (luz de bloque &lt; 4), pega una antorcha en la pared a la altura de la cabeza (o en el suelo).
  * Así salen espaciadas solas (~cada 7 bloques) y le sirven de camino de vuelta.
  *
  * Si no lleva antorchas, se las fabrica en la mano (2x2) con carbón y un palo,
  * haciendo los palos y las tablas si hace falta. Sin carbón, sigue a oscuras.
  */
 public final class TunnelLighting {
-	/** Por debajo de esto el túnel está "oscuro". */
-	private static final int DARK = 8;
+	/**
+	 * Por debajo de esto pone otra antorcha. Los monstruos solo aparecen con luz 0,
+	 * así que con 4 quedan separadas como las pondría un jugador (~10 bloques en túnel recto).
+	 */
+	private static final int DARK = 4;
 	private static final int MAX_CRAFT_DEPTH = 3;
 
 	public enum Result { LIT, NOT_DARK, NO_SPOT, NO_TORCHES }
