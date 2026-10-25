@@ -28,6 +28,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -407,6 +408,25 @@ public final class BecarioCommands {
 			case GUARDIA -> "protejo esta zona (" + becario.getGuardRadius() + " bloques). Usa /becario sigue para que vuelva contigo.";
 		};
 		source.sendSuccess(() -> Component.literal(name + ": " + msg), false);
+		// Un jefe de guardia pone a su equipo igual. En modo guardia los reparte en
+		// corro alrededor de la zona, para cubrirla entera en vez de amontonarse.
+		List<BecarioEntity> crew = crew(player, becario, Area.GUARDIA);
+		if (crew.size() > 1) {
+			int others = crew.size() - 1;
+			int ring = Math.max(2, becario.getGuardRadius() / 2);
+			for (int i = 1; i < crew.size(); i++) {
+				double angle = 2 * Math.PI * (i - 1) / others;
+				net.minecraft.core.BlockPos post = groundAt(player.level(), player.blockPosition()
+					.offset((int) Math.round(Math.cos(angle) * ring), 0, (int) Math.round(Math.sin(angle) * ring)));
+				crew.get(i).setCombatMode(mode, radius, post);
+			}
+			StringBuilder names = new StringBuilder();
+			for (int i = 1; i < crew.size(); i++) {
+				names.append(names.isEmpty() ? "" : ", ").append(crew.get(i).getName().getString());
+			}
+			source.sendSuccess(() -> Component.literal(name + ": mi equipo también (" + names
+				+ (mode == CombatMode.GUARDIA ? "), cada uno en un punto de la zona." : ").")), false);
+		}
 		return 1;
 	}
 
@@ -424,17 +444,9 @@ public final class BecarioCommands {
 		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
 		BecarioRegistry.Entry entry = registry.entry(becario.getUUID());
 
-		// Un jefe reparte el trabajo entre su equipo (los que estén cerca).
-		List<BecarioEntity> crew = new ArrayList<>();
-		crew.add(becario);
-		if (entry != null && entry.isBoss()) {
-			for (BecarioRegistry.Entry member : registry.team(becario.getUUID())) {
-				BecarioEntity m = BecarioPanel.find(player.level().getServer(), member.id());
-				if (m != null && m.level() == becario.level() && m.distanceToSqr(becario) < 64.0 * 64.0) {
-					crew.add(m);
-				}
-			}
-		}
+		// Un jefe de minería (o de tala, si es madera) reparte el trabajo entre su equipo.
+		Area taskArea = Area.forGroup(target.toLowerCase());
+		List<BecarioEntity> crew = crew(player, becario, taskArea);
 		int share = amount / crew.size();
 		int extra = amount % crew.size();
 		StringBuilder plan = new StringBuilder();
@@ -451,12 +463,31 @@ public final class BecarioCommands {
 		String head = becario.getName().getString() + ": a por " + amount + " de " + group.label();
 		String text = crew.size() > 1 ? head + ". Lo reparto: " + plan + "." : head + ".";
 		source.sendSuccess(() -> Component.literal(text), false);
-		if (entry != null && entry.isBoss()) {
-			Area area = Area.of(entry.area());
-			BecarioPanel.maybeAskForStaff(player, becario, area != null ? area : Area.forGroup(target),
-				registry.team(becario.getUUID()).size(), amount);
+		if (entry != null && Area.of(entry.area()) == taskArea) {
+			BecarioPanel.maybeAskForStaff(player, becario, taskArea, registry.team(becario.getUUID()).size(), amount);
 		}
 		return 1;
+	}
+
+	/**
+	 * Quién hace un trabajo: el becario y, si es jefe de esa área, su equipo
+	 * (los que estén cerca, en la misma dimensión).
+	 */
+	private static List<BecarioEntity> crew(ServerPlayer player, BecarioEntity becario, Area area) {
+		List<BecarioEntity> crew = new ArrayList<>();
+		crew.add(becario);
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		BecarioRegistry.Entry entry = registry.entry(becario.getUUID());
+		if (entry == null || Area.of(entry.area()) != area) {
+			return crew;
+		}
+		for (BecarioRegistry.Entry member : registry.team(becario.getUUID())) {
+			BecarioEntity m = BecarioPanel.find(player.level().getServer(), member.id());
+			if (m != null && m.level() == becario.level() && m.distanceToSqr(becario) < 64.0 * 64.0) {
+				crew.add(m);
+			}
+		}
+		return crew;
 	}
 
 	/** /becario fabrica <objeto> [cantidad]: consigue todo lo necesario y lo fabrica. */
@@ -465,9 +496,29 @@ public final class BecarioCommands {
 		if (becario == null) {
 			return 0;
 		}
-		becario.startCraft(item, amount);
-		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": voy a fabricar " + amount + "x ")
-			.append(new ItemStack(item).getHoverName()).append("."), false);
+		ServerPlayer player = source.getPlayerOrException();
+		// Un jefe de fabricación reparte el encargo: cada uno junta lo suyo y lo fabrica a la vez.
+		List<BecarioEntity> crew = crew(player, becario, Area.FABRICACION);
+		int share = amount / crew.size();
+		int extra = amount % crew.size();
+		StringBuilder plan = new StringBuilder();
+		for (int i = 0; i < crew.size(); i++) {
+			int part = share + (i < extra ? 1 : 0);
+			if (part <= 0) {
+				continue;
+			}
+			crew.get(i).startCraft(item, part);
+			plan.append(plan.isEmpty() ? "" : ", ").append(crew.get(i).getName().getString()).append(" ").append(part);
+		}
+		MutableComponent text = Component.literal(becario.getName().getString() + ": voy a fabricar " + amount + "x ")
+			.append(new ItemStack(item).getHoverName());
+		text.append(crew.size() > 1 ? Component.literal(". Lo reparto: " + plan + ".") : Component.literal("."));
+		source.sendSuccess(() -> text, false);
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		BecarioRegistry.Entry entry = registry.entry(becario.getUUID());
+		if (entry != null && Area.of(entry.area()) == Area.FABRICACION) {
+			BecarioPanel.maybeAskForStaff(player, becario, Area.FABRICACION, registry.team(becario.getUUID()).size(), amount * 8);
+		}
 		return 1;
 	}
 

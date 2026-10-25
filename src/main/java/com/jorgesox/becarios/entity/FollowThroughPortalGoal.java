@@ -91,6 +91,8 @@ public class FollowThroughPortalGoal extends Goal {
 		for (BlockPos c : new BlockPos[] { p.relative(side), p.relative(side.getOpposite()) }) {
 			if (becario.level().getBlockState(c).getCollisionShape(becario.level(), c).isEmpty()
 				&& becario.level().getBlockState(c.above()).getCollisionShape(becario.level(), c.above()).isEmpty()
+				// con suelo firme: en el Nether los portales salen a veces al borde de un precipicio
+				&& becario.level().getBlockState(c.below()).isFaceSturdy(becario.level(), c.below(), Direction.UP)
 				&& (best == null || c.distSqr(becario.blockPosition()) < best.distSqr(becario.blockPosition()))) {
 				best = c;
 			}
