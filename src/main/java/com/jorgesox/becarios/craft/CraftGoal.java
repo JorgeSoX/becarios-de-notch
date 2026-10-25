@@ -218,9 +218,17 @@ public class CraftGoal extends Goal {
 	private MutableComponent summary(CraftOrder order, List<CraftPlanner.Step> steps) {
 		MutableComponent text = Component.literal("para fabricar " + order.asked + "x ").append(name(order.item)).append(": ");
 		List<Component> parts = new ArrayList<>();
+		// Lo que hay que picar/talar, todo junto al principio (luego se hace en un solo viaje por material).
+		java.util.Map<String, Integer> gather = new java.util.LinkedHashMap<>();
+		for (CraftPlanner.Step step : steps) {
+			if (step instanceof CraftPlanner.Gather g) {
+				gather.merge(g.group(), g.blocks(), Integer::sum);
+			}
+		}
+		gather.forEach((group, blocks) -> parts.add(Component.literal("conseguir " + blocks + " de " + group)));
 		for (CraftPlanner.Step step : steps) {
 			switch (step) {
-				case CraftPlanner.Gather g -> parts.add(Component.literal("picar " + g.blocks() + " de " + g.group()));
+				case CraftPlanner.Gather g -> { }
 				case CraftPlanner.Craft c -> parts.add(Component.literal("hacer " + c.times() * c.recipe().result().getCount() + "x ")
 					.append(name(c.recipe().result().getItem())));
 				case CraftPlanner.Smelt s -> parts.add(Component.literal("fundir " + s.times() + "x ")

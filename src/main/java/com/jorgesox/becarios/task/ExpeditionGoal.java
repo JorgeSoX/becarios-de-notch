@@ -61,6 +61,8 @@ public class ExpeditionGoal extends Goal {
 	private final Set<BlockPos> badOres = new HashSet<>();
 	/** Ya ha avisado de que no tiene antorchas (una vez por orden). */
 	private boolean warnedNoTorches;
+	/** Ya ha avisado de que sube a la superficie (una vez por orden). */
+	private boolean toldClimbing;
 
 	// Estado de este intento.
 	private int ticks;
@@ -101,6 +103,7 @@ public class ExpeditionGoal extends Goal {
 			escapeSteps = 0;
 			badOres.clear();
 			warnedNoTorches = false;
+			toldClimbing = false;
 			becario.clearTrail();
 		} else if (isSurface(task)) {
 			dir = dir.getClockWise(); // en superficie, cada intento hacia otro lado
@@ -172,6 +175,19 @@ public class ExpeditionGoal extends Goal {
 	// ------------------------------------------------------------ superficie
 
 	private void tickSurface(ServerLevel level, BecarioTask task) {
+		// Bajo tierra y lo que busca está en la superficie (madera, arena...):
+		// primero sube cavando una escalera, como haría un jugador.
+		BlockPos feet = becario.blockPosition();
+		int surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, feet.getX(), feet.getZ());
+		if (!level.canSeeSky(feet.above()) && feet.getY() < surfaceY - 2) {
+			if (!toldClimbing) {
+				toldClimbing = true;
+				becario.tell("estoy bajo tierra: subo a la superficie a por " + task.label + ".");
+			}
+			becario.setWorkFacing(dir);
+			advance(level, 1);
+			return;
+		}
 		if (surfaceGoal == null) {
 			int distance = 32 + 16 * Math.min(6, task.expeditions / 4);
 			BlockPos from = becario.blockPosition().relative(dir, distance);
@@ -220,7 +236,7 @@ public class ExpeditionGoal extends Goal {
 		// 3) Avanzar: escalera hacia abajo o túnel horizontal.
 		int targetY = Math.max(level.getMinY() + 6, group.preferredY());
 		boolean descending = becario.getBlockY() > targetY && escapeSteps <= 0;
-		advance(level, descending);
+		advance(level, descending ? -1 : 0);
 	}
 
 	/** Mineral del tipo pedido a menos de ORE_SCAN bloques (aunque esté dentro de la roca). */
@@ -281,7 +297,7 @@ public class ExpeditionGoal extends Goal {
 				oreTarget = null;
 				return;
 			}
-			advance(level, below);
+			advance(level, below ? -1 : 0);
 			return;
 		}
 
@@ -329,10 +345,12 @@ public class ExpeditionGoal extends Goal {
 
 	/**
 	 * Un paso de excavación en la dirección actual.
-	 * Escalera: despeja el bloque de delante-abajo y 2 por encima, y baja.
-	 * Túnel: despeja delante (pies y cabeza) y avanza.
+	 * Escalera de bajada (vertical -1): despeja delante-abajo y 2 por encima, y baja.
+	 * Túnel (0): despeja delante (pies y cabeza) y avanza.
+	 * Escalera de subida (+1): despeja encima de la cabeza y delante-arriba (2), y sube.
 	 */
-	private void advance(ServerLevel level, boolean descending) {
+	private void advance(ServerLevel level, int vertical) {
+		boolean descending = vertical < 0;
 		// ¿Estamos entrando en el hueco ya despejado?
 		if (stepTarget != null) {
 			Vec3 pos = becario.position();
@@ -348,7 +366,7 @@ public class ExpeditionGoal extends Goal {
 				if (escapeSteps > 0) {
 					escapeSteps--;
 				}
-				if (!descending && ++segment >= TUNNEL_SEGMENT) {
+				if (vertical == 0 && ++segment >= TUNNEL_SEGMENT) {
 					segment = 0;
 					dir = dir.getClockWise(); // túnel en "U" para cubrir más zona
 				}
@@ -370,10 +388,12 @@ public class ExpeditionGoal extends Goal {
 		}
 
 		BlockPos feet = becario.blockPosition();
-		BlockPos next = descending ? feet.relative(dir).below() : feet.relative(dir);
+		BlockPos next = descending ? feet.relative(dir).below() : vertical > 0 ? feet.relative(dir).above() : feet.relative(dir);
 		BlockPos[] toClear = descending
 			? new BlockPos[] {next.above(2), next.above(), next}
-			: new BlockPos[] {next.above(), next};
+			: vertical > 0
+				? new BlockPos[] {feet.above(2), next.above(), next}
+				: new BlockPos[] {next.above(), next};
 
 		for (BlockPos pos : toClear) {
 			BlockState state = level.getBlockState(pos);

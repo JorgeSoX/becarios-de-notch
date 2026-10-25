@@ -1,5 +1,6 @@
 package com.jorgesox.becarios;
 
+import com.jorgesox.becarios.block.ModBlocks;
 import com.jorgesox.becarios.command.BecarioCommands;
 import com.jorgesox.becarios.entity.ModEntities;
 import com.jorgesox.becarios.menu.ModMenus;
@@ -26,6 +27,7 @@ public class BecariosDeNotch implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 
+		ModBlocks.register();
 		ModEntities.register();
 		ModMenus.register();
 		BecarioNetwork.register();

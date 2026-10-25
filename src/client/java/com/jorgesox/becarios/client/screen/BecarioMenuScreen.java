@@ -104,6 +104,8 @@ public class BecarioMenuScreen extends Screen {
 				this.send("despedir", "", 0, true);
 			}
 		}).bounds(this.left + 96, by, 130, 20).build());
+		this.addRenderableWidget(Button.builder(Component.literal("Panel"), b -> this.send("panel", "", 0, true))
+			.bounds(this.left + PANEL_W - 70, this.top + 6, 60, 16).build());
 		this.addRenderableWidget(Button.builder(Component.literal("Cerrar"), b -> this.onClose())
 			.bounds(this.left + PANEL_W - 70, by, 60, 20).build());
 	}
@@ -114,7 +116,7 @@ public class BecarioMenuScreen extends Screen {
 	}
 
 	private void send(String action, String arg, int amount, boolean close) {
-		ClientPlayNetworking.send(new BecarioNetwork.Action(action, arg, amount));
+		ClientPlayNetworking.send(new BecarioNetwork.Action(this.data.id(), action, arg, amount));
 		if (close) {
 			this.onClose();
 		}

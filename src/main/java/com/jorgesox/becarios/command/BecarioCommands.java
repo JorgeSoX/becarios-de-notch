@@ -1,9 +1,11 @@
 package com.jorgesox.becarios.command;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import com.jorgesox.becarios.BecarioSkins;
+import com.jorgesox.becarios.entity.Area;
 import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.entity.BecarioRegistry;
 import com.jorgesox.becarios.entity.CombatMode;
@@ -15,6 +17,8 @@ import com.jorgesox.becarios.task.BlockGroups;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+
+import org.jspecify.annotations.Nullable;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -33,9 +37,13 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
 /**
- * Comandos del becario. Cada jugador solo controla SU becario
- * (se busca por dueño, así que nadie puede dar órdenes al de otro).
+ * Comandos del becario (todo esto se puede hacer también con el panel, tecla B,
+ * y el menú de cada becario: los comandos quedan como atajo).
  *
+ * Cada jugador tiene hasta 5 becarios; las órdenes sin nombre van al
+ * "seleccionado" (el último que abriste o elegiste). Nadie controla los de otro.
+ *
+ *   /becario panel | lista | elegir <nombre>
  *   /becario contratar                    (pantalla para elegir nombre y skin)
  *   /becario invocar <nombre> <skin>
  *   /becario sigue | quieto | ven | despedir
@@ -45,6 +53,10 @@ import net.minecraft.world.level.entity.EntityTypeTest;
  */
 public final class BecarioCommands {
 	private static final int MAX_NAME_LENGTH = 32;
+	/** Acciones que necesitan al becario cargado (las demás tocan solo la plantilla). */
+	private static final java.util.Set<String> NEEDS_PRESENT = java.util.Set.of(
+		"sigue", "quieto", "ven", "para", "recoge", "dame", "brujula", "tala", "mina", "inventario", "modo");
+	private static final String NO_BECARIO = "No tienes ningún becario cerca. Pulsa B (o usa una Oficina) para contratar o elegir uno.";
 
 	private BecarioCommands() {
 	}
@@ -52,6 +64,25 @@ public final class BecarioCommands {
 	public static void register() {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 			dispatcher.register(Commands.literal("becario")
+				.then(Commands.literal("panel").executes(ctx -> {
+					BecarioPanel.open(ctx.getSource().getPlayerOrException());
+					return 1;
+				}))
+				.then(Commands.literal("lista").executes(ctx -> list(ctx.getSource())))
+				.then(Commands.literal("elegir")
+					.then(Commands.argument("nombre", StringArgumentType.greedyString())
+						.suggests((ctx, builder) -> SharedSuggestionProvider.suggest(rosterNames(ctx.getSource()), builder))
+						.executes(ctx -> choose(ctx.getSource(), StringArgumentType.getString(ctx, "nombre")))))
+				.then(Commands.literal("peticion")
+					.then(Commands.argument("id", IntegerArgumentType.integer(1))
+						.then(Commands.literal("aceptar").executes(ctx -> {
+							BecarioPanel.answer(ctx.getSource().getPlayerOrException(), IntegerArgumentType.getInteger(ctx, "id"), true);
+							return 1;
+						}))
+						.then(Commands.literal("rechazar").executes(ctx -> {
+							BecarioPanel.answer(ctx.getSource().getPlayerOrException(), IntegerArgumentType.getInteger(ctx, "id"), false);
+							return 1;
+						}))))
 				.then(Commands.literal("contratar").executes(ctx -> openHire(ctx.getSource())))
 				.then(Commands.literal("invocar")
 					.then(Commands.argument("nombre", StringArgumentType.string())
@@ -106,16 +137,28 @@ public final class BecarioCommands {
 	}
 
 	/**
-	 * Busca el becario del jugador: primero por el registro persistente (UUID),
-	 * y si no está registrado, escaneando las entidades cargadas (becarios antiguos).
+	 * El becario al que van las órdenes: el seleccionado si está cargado; si no,
+	 * el primero de su plantilla que esté cargado (y pasa a ser el seleccionado).
 	 */
 	private static BecarioEntity findOwned(ServerPlayer player) {
 		MinecraftServer server = player.level().getServer();
-		UUID registered = BecarioRegistry.get(server).becarioOf(player.getUUID());
-		for (ServerLevel level : server.getAllLevels()) {
-			if (registered != null && level.getEntity(registered) instanceof BecarioEntity becario) {
+		BecarioRegistry registry = BecarioRegistry.get(server);
+		UUID selected = registry.selected(player.getUUID());
+		if (selected != null) {
+			BecarioEntity becario = BecarioPanel.find(server, selected);
+			if (becario != null && becario.isOwnedBy(player)) {
 				return becario;
 			}
+		}
+		for (BecarioRegistry.Entry entry : registry.roster(player.getUUID())) {
+			BecarioEntity becario = BecarioPanel.find(server, entry.id());
+			if (becario != null) {
+				registry.select(player.getUUID(), becario.getUUID());
+				return becario;
+			}
+		}
+		// Becarios de antes de la plantilla (aún sin apuntar).
+		for (ServerLevel level : server.getAllLevels()) {
 			List<? extends BecarioEntity> found =
 				level.getEntities(EntityTypeTest.forClass(BecarioEntity.class), becario -> becario.isOwnedBy(player));
 			if (!found.isEmpty()) {
@@ -125,8 +168,13 @@ public final class BecarioCommands {
 		return null;
 	}
 
-	/** ¿Tiene ya este jugador un becario (cargado) con ese nombre? Sin distinguir mayúsculas. */
+	/** ¿Tiene ya este jugador un becario con ese nombre? Sin distinguir mayúsculas. */
 	private static boolean nameTaken(ServerPlayer player, String name) {
+		for (BecarioRegistry.Entry entry : BecarioRegistry.get(player.level().getServer()).roster(player.getUUID())) {
+			if (entry.name().equalsIgnoreCase(name)) {
+				return true;
+			}
+		}
 		for (ServerLevel level : player.level().getServer().getAllLevels()) {
 			for (BecarioEntity becario : level.getEntities(EntityTypeTest.forClass(BecarioEntity.class), b -> b.isOwnedBy(player))) {
 				if (becario.getName().getString().equalsIgnoreCase(name)) {
@@ -137,53 +185,153 @@ public final class BecarioCommands {
 		return false;
 	}
 
+	private static List<String> rosterNames(CommandSourceStack source) {
+		List<String> names = new ArrayList<>();
+		if (source.getPlayer() instanceof ServerPlayer player) {
+			for (BecarioRegistry.Entry entry : BecarioRegistry.get(player.level().getServer()).roster(player.getUUID())) {
+				names.add(entry.name());
+			}
+		}
+		return names;
+	}
+
+	/** /becario elegir <nombre>: a partir de ahora las órdenes van a ese. */
+	private static int choose(CommandSourceStack source, String name) throws CommandSyntaxException {
+		ServerPlayer player = source.getPlayerOrException();
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		for (BecarioRegistry.Entry entry : registry.roster(player.getUUID())) {
+			if (entry.name().equalsIgnoreCase(name.trim())) {
+				registry.select(player.getUUID(), entry.id());
+				source.sendSuccess(() -> Component.literal("Ahora hablas con " + entry.name() + "."), false);
+				return 1;
+			}
+		}
+		source.sendFailure(Component.literal("No tienes ningún becario llamado \"" + name + "\"."));
+		return 0;
+	}
+
+	/** /becario lista: tu plantilla, con quién es el seleccionado y los equipos. */
+	private static int list(CommandSourceStack source) throws CommandSyntaxException {
+		ServerPlayer player = source.getPlayerOrException();
+		MinecraftServer server = player.level().getServer();
+		BecarioRegistry registry = BecarioRegistry.get(server);
+		List<BecarioRegistry.Entry> roster = registry.roster(player.getUUID());
+		if (roster.isEmpty()) {
+			source.sendFailure(Component.literal(NO_BECARIO));
+			return 0;
+		}
+		UUID selected = registry.selected(player.getUUID());
+		source.sendSuccess(() -> Component.literal("Tus becarios (" + roster.size() + "/" + BecarioRegistry.MAX_PER_PLAYER + "):"), false);
+		for (BecarioRegistry.Entry entry : roster) {
+			BecarioEntity becario = BecarioPanel.find(server, entry.id());
+			StringBuilder line = new StringBuilder(entry.id().equals(selected) ? " ▶ " : " • ").append(entry.name());
+			Area area = Area.of(entry.area());
+			if (area != null) {
+				line.append(" [jefe de ").append(area.label().toLowerCase()).append(", equipo de ")
+					.append(registry.team(entry.id()).size()).append("]");
+			}
+			if (entry.boss().isPresent()) {
+				BecarioRegistry.Entry boss = registry.entry(entry.boss().get());
+				line.append(" [equipo de ").append(boss != null ? boss.name() : "?").append("]");
+			}
+			line.append(": ").append(becario != null ? statusLine(becario) : "lejos (zona sin cargar)");
+			String text = line.toString();
+			source.sendSuccess(() -> Component.literal(text), false);
+		}
+		return 1;
+	}
+
 	private static int summon(CommandSourceStack source, String rawName, String skin) throws CommandSyntaxException {
 		ServerPlayer player = source.getPlayerOrException();
+		return hire(player, rawName, skin, null) != null ? 1 : 0;
+	}
+
+	/**
+	 * Contratar: comprueba el tope (5), el nombre y la skin, cobra las esmeraldas
+	 * del puesto y lo pone a tu lado (o junto a `near`, p. ej. su jefe).
+	 * Devuelve el becario, o null si no se pudo (y ya ha explicado por qué).
+	 */
+	private static @Nullable BecarioEntity hire(ServerPlayer player, String rawName, String skin, @Nullable BecarioEntity near) {
 		if (!BecarioSkins.isValid(skin)) {
-			source.sendFailure(Component.literal("Skin desconocida. Disponibles: " + String.join(", ", BecarioSkins.IDS)));
-			return 0;
+			player.sendSystemMessage(Component.literal("Skin desconocida. Disponibles: " + String.join(", ", BecarioSkins.IDS)));
+			return null;
 		}
 		// Nombre opcional: si no se pone, se llama como la skin.
 		String name = rawName.trim().isEmpty() ? BecarioSkins.displayName(skin) : rawName.trim();
 		if (name.length() > MAX_NAME_LENGTH) {
-			source.sendFailure(Component.literal("El nombre puede tener como mucho " + MAX_NAME_LENGTH + " caracteres."));
-			return 0;
+			player.sendSystemMessage(Component.literal("El nombre puede tener como mucho " + MAX_NAME_LENGTH + " caracteres."));
+			return null;
 		}
 		// Nunca dos becarios tuyos con el mismo nombre: hay que cambiarlo.
 		if (nameTaken(player, name)) {
-			source.sendFailure(Component.literal("Ya tienes un becario llamado \"" + name + "\". Ponle otro nombre."));
-			return 0;
+			player.sendSystemMessage(Component.literal("Ya tienes un becario llamado \"" + name + "\". Ponle otro nombre."));
+			return null;
 		}
-		if (findOwned(player) != null) {
-			source.sendFailure(Component.literal("Ya tienes un becario. Usa /becario despedir si quieres otro."));
-			return 0;
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		int count = registry.count(player.getUUID());
+		if (count >= BecarioRegistry.MAX_PER_PLAYER) {
+			player.sendSystemMessage(Component.literal("Ya tienes " + BecarioRegistry.MAX_PER_PLAYER
+				+ " becarios, el máximo. Despide a alguno si quieres contratar otro."));
+			return null;
+		}
+		int cost = BecarioRegistry.costForSlot(count);
+		if (!BecarioPanel.charge(player, cost)) {
+			player.sendSystemMessage(Component.literal("Contratar a otro becario cuesta " + cost
+				+ " esmeraldas y llevas " + BecarioPanel.emeralds(player) + "."));
+			return null;
 		}
 
-		ServerLevel level = player.level();
+		ServerLevel level = near != null && near.level() instanceof ServerLevel nearLevel ? nearLevel : player.level();
 		BecarioEntity becario = ModEntities.BECARIO.create(level, EntitySpawnReason.COMMAND);
 		if (becario == null) {
-			source.sendFailure(Component.literal("No se pudo crear al becario."));
-			return 0;
+			player.sendSystemMessage(Component.literal("No se pudo crear al becario."));
+			return null;
 		}
-
-		becario.snapTo(player.getX(), player.getY(), player.getZ(), player.getYRot(), 0.0F);
+		if (near != null) {
+			becario.snapTo(near.getX(), near.getY(), near.getZ(), near.getYRot(), 0.0F);
+		} else {
+			becario.snapTo(player.getX(), player.getY(), player.getZ(), player.getYRot(), 0.0F);
+		}
 		becario.setCustomName(Component.literal(name));
 		becario.setCustomNameVisible(true);
 		becario.setSkin(skin);
 		becario.tame(player);               // lo marca como domado y le asigna dueño
 		becario.setPersistenceRequired();   // que nunca desaparezca por estar lejos
 		level.addFreshEntity(becario);
+		registry.add(becario.getUUID(), player.getUUID(), name, skin);
 
-		BecarioRegistry registry = BecarioRegistry.get(level.getServer());
-		boolean replacedUnloaded = registry.becarioOf(player.getUUID()) != null;
-		registry.set(player.getUUID(), becario.getUUID());
-		if (replacedUnloaded) {
-			source.sendSuccess(() -> Component.literal(
-				"Si tenías otro becario en una zona sin cargar, se irá cuando se cargue y soltará allí lo que llevaba."), false);
+		boolean paid = !player.getAbilities().instabuild;
+		player.sendSystemMessage(Component.literal(name + " se ha incorporado como becario"
+			+ (paid ? " (" + cost + " esmeraldas)." : ".")
+			+ " Tienes " + (count + 1) + "/" + BecarioRegistry.MAX_PER_PLAYER + "."));
+		return becario;
+	}
+
+	/** Contratar para el equipo de un jefe (cuando aceptas su petición). */
+	public static void hireForTeam(ServerPlayer player, UUID bossId, Area area) {
+		MinecraftServer server = player.level().getServer();
+		BecarioRegistry registry = BecarioRegistry.get(server);
+		BecarioRegistry.Entry bossEntry = registry.entry(bossId);
+		if (bossEntry == null || !bossEntry.owner().equals(player.getUUID())) {
+			player.sendSystemMessage(Component.literal("Ese jefe ya no está en tu plantilla."));
+			return;
 		}
-
-		source.sendSuccess(() -> Component.literal(name + " se ha incorporado como becario."), false);
-		return 1;
+		// Skin al azar del catálogo y un nombre de oficio que no esté repetido.
+		String skin = BecarioSkins.IDS.get(player.getRandom().nextInt(BecarioSkins.IDS.size()));
+		String base = Character.toUpperCase(area.worker().charAt(0)) + area.worker().substring(1);
+		String name = base;
+		for (int n = 2; nameTaken(player, name); n++) {
+			name = base + " " + n;
+		}
+		BecarioEntity boss = BecarioPanel.find(server, bossId);
+		BecarioEntity hired = hire(player, name, skin, boss);
+		if (hired == null) {
+			return;
+		}
+		registry.setBoss(hired.getUUID(), bossId);
+		if (boss != null) {
+			boss.tell(Component.literal("gracias, jefe. " + name + " se une a mi equipo."));
+		}
 	}
 
 	private static int follow(CommandSourceStack source) throws CommandSyntaxException {
@@ -267,8 +415,42 @@ public final class BecarioCommands {
 			source.sendFailure(Component.literal("Objetivo desconocido. Disponibles: " + String.join(", ", BlockGroups.names())));
 			return 0;
 		}
-		becario.startTask(BecarioTask.mine(group.label(), group.test(), amount));
-		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": a por " + amount + " de " + group.label() + "."), false);
+		ServerPlayer player = source.getPlayerOrException();
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		BecarioRegistry.Entry entry = registry.entry(becario.getUUID());
+
+		// Un jefe reparte el trabajo entre su equipo (los que estén cerca).
+		List<BecarioEntity> crew = new ArrayList<>();
+		crew.add(becario);
+		if (entry != null && entry.isBoss()) {
+			for (BecarioRegistry.Entry member : registry.team(becario.getUUID())) {
+				BecarioEntity m = BecarioPanel.find(player.level().getServer(), member.id());
+				if (m != null && m.level() == becario.level() && m.distanceToSqr(becario) < 64.0 * 64.0) {
+					crew.add(m);
+				}
+			}
+		}
+		int share = amount / crew.size();
+		int extra = amount % crew.size();
+		StringBuilder plan = new StringBuilder();
+		for (int i = 0; i < crew.size(); i++) {
+			int mine = share + (i < extra ? 1 : 0);
+			if (mine <= 0) {
+				continue;
+			}
+			crew.get(i).startTask(BecarioTask.mine(group.label(), group.test(), mine));
+			if (crew.size() > 1) {
+				plan.append(plan.isEmpty() ? "" : ", ").append(crew.get(i).getName().getString()).append(" ").append(mine);
+			}
+		}
+		String head = becario.getName().getString() + ": a por " + amount + " de " + group.label();
+		String text = crew.size() > 1 ? head + ". Lo reparto: " + plan + "." : head + ".";
+		source.sendSuccess(() -> Component.literal(text), false);
+		if (entry != null && entry.isBoss()) {
+			Area area = Area.of(entry.area());
+			BecarioPanel.maybeAskForStaff(player, becario, area != null ? area : Area.forGroup(target),
+				registry.team(becario.getUUID()).size(), amount);
+		}
 		return 1;
 	}
 
@@ -365,17 +547,22 @@ public final class BecarioCommands {
 
 	private static int openHire(CommandSourceStack source) throws CommandSyntaxException {
 		ServerPlayer player = source.getPlayerOrException();
-		if (findOwned(player) != null) {
-			source.sendFailure(Component.literal("Ya tienes un becario. Usa /becario despedir si quieres otro."));
+		int count = BecarioRegistry.get(player.level().getServer()).count(player.getUUID());
+		if (count >= BecarioRegistry.MAX_PER_PLAYER) {
+			source.sendFailure(Component.literal("Ya tienes " + BecarioRegistry.MAX_PER_PLAYER
+				+ " becarios, el máximo. Despide a alguno si quieres contratar otro."));
 			return 0;
 		}
-		ServerPlayNetworking.send(player, new BecarioNetwork.OpenHire());
+		ServerPlayNetworking.send(player, new BecarioNetwork.OpenHire(BecarioRegistry.costForSlot(count),
+			BecarioPanel.emeralds(player), count, BecarioRegistry.MAX_PER_PLAYER, player.getAbilities().instabuild));
 		return 1;
 	}
 
 	/** Abre el menú del becario (clic derecho sobre él). */
 	public static void openMenu(ServerPlayer player, BecarioEntity becario) {
+		BecarioRegistry.get(player.level().getServer()).select(player.getUUID(), becario.getUUID());
 		ServerPlayNetworking.send(player, new BecarioNetwork.OpenMenu(
+			becario.getUUID().toString(),
 			becario.getName().getString(), becario.getSkin(), becario.getHealth(), becario.getMaxHealth(),
 			becario.getCombatMode().name(), statusLine(becario), whereLine(player, becario)));
 	}
@@ -395,19 +582,67 @@ public final class BecarioCommands {
 		}
 	}
 
-	/** Un botón del menú del becario: se traduce a la misma lógica que los comandos. */
-	public static void actionFromScreen(ServerPlayer player, String action, String arg, int amount) {
+	/**
+	 * Un botón del menú o del panel: se traduce a la misma lógica que los comandos.
+	 * `target` es el UUID del becario (vacío = el seleccionado); solo vale uno tuyo.
+	 */
+	public static void actionFromScreen(ServerPlayer player, String target, String action, String arg, int amount) {
 		CommandSourceStack source = player.createCommandSourceStack();
+		MinecraftServer server = player.level().getServer();
+		BecarioRegistry registry = BecarioRegistry.get(server);
+		UUID targetId = null;
+		if (!target.isEmpty()) {
+			try {
+				targetId = UUID.fromString(target);
+			} catch (IllegalArgumentException e) {
+				return;
+			}
+			BecarioRegistry.Entry entry = registry.entry(targetId);
+			if (entry == null || !entry.owner().equals(player.getUUID())) {
+				return; // no es tuyo (o ya no está)
+			}
+			registry.select(player.getUUID(), targetId);
+			// Órdenes a uno que está lejos (sin cargar): no se las puede oír, y no
+			// deben acabar en otro becario.
+			if (NEEDS_PRESENT.contains(action) && BecarioPanel.find(server, targetId) == null) {
+				player.sendSystemMessage(Component.literal("Está demasiado lejos (en una zona sin cargar): no te oye. Acércate o sigue su brújula."));
+				return;
+			}
+		}
 		int clamped = Math.max(1, Math.min(256, amount));
 		try {
 			switch (action) {
+				case "panel" -> BecarioPanel.open(player);
+				case "contratar" -> openHire(source);
+				case "elegir" -> { }
+				case "peticion" -> BecarioPanel.answer(player, Integer.parseInt(arg), amount == 1);
+				case "menu" -> {
+					BecarioEntity becario = targetId != null ? BecarioPanel.find(server, targetId) : null;
+					if (becario == null) {
+						player.sendSystemMessage(Component.literal("Está demasiado lejos (en una zona sin cargar). Acércate o sigue su brújula."));
+					} else {
+						openMenu(player, becario);
+					}
+				}
+				case "jefe" -> setBossArea(player, targetId, arg);
+				case "asignar" -> assignToBoss(player, targetId, arg);
+				case "despedir" -> {
+					if (targetId != null && BecarioPanel.find(server, targetId) == null) {
+						BecarioRegistry.Entry entry = registry.entry(targetId);
+						registry.fire(targetId);
+						player.sendSystemMessage(Component.literal((entry != null ? entry.name() : "El becario")
+							+ " ha sido despedido. Está lejos: dejará lo que llevaba donde esté."));
+					} else {
+						dismiss(source);
+					}
+				}
 				case "sigue" -> follow(source);
 				case "quieto" -> stay(source);
 				case "ven" -> come(source);
 				case "para" -> stopTask(source);
 				case "recoge" -> collect(source);
 				case "dame" -> giveAll(source);
-				case "despedir" -> dismiss(source);
+				case "brujula" -> giveCompass(source);
 				case "tala" -> mine(source, "madera", clamped);
 				case "mina" -> mine(source, arg, clamped);
 				case "inventario" -> inventory(source);
@@ -424,6 +659,64 @@ public final class BecarioCommands {
 		} catch (CommandSyntaxException | IllegalArgumentException e) {
 			player.sendSystemMessage(Component.literal("No se pudo hacer: " + e.getMessage()));
 		}
+	}
+
+	/** Nombrar jefe de un área (arg = nombre del área) o quitarle el cargo (arg vacío). */
+	private static void setBossArea(ServerPlayer player, @Nullable UUID id, String arg) {
+		if (id == null) {
+			return;
+		}
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		BecarioRegistry.Entry entry = registry.entry(id);
+		if (entry == null) {
+			return;
+		}
+		Area area = Area.of(arg);
+		if (area == null) {
+			int team = registry.team(id).size();
+			registry.setArea(id, "");
+			BecarioPanel.forgetBoss(id);
+			player.sendSystemMessage(Component.literal(entry.name() + " ya no es jefe"
+				+ (team > 0 ? " (su equipo de " + team + " queda libre)." : ".")));
+			return;
+		}
+		registry.setArea(id, area.name());
+		player.sendSystemMessage(Component.literal(entry.name() + " es ahora jefe de " + area.label().toLowerCase()
+			+ ". Mete gente en su equipo desde el panel; cuando le mandes trabajo, lo repartirá."));
+	}
+
+	/** Meter a un becario en el equipo de un jefe (arg = UUID del jefe) o sacarlo (arg vacío). */
+	private static void assignToBoss(ServerPlayer player, @Nullable UUID id, String arg) {
+		if (id == null) {
+			return;
+		}
+		BecarioRegistry registry = BecarioRegistry.get(player.level().getServer());
+		BecarioRegistry.Entry entry = registry.entry(id);
+		if (entry == null) {
+			return;
+		}
+		if (arg.isEmpty()) {
+			registry.setBoss(id, null);
+			player.sendSystemMessage(Component.literal(entry.name() + " ya no está en ningún equipo: te sigue a ti."));
+			return;
+		}
+		UUID bossId;
+		try {
+			bossId = UUID.fromString(arg);
+		} catch (IllegalArgumentException e) {
+			return;
+		}
+		BecarioRegistry.Entry boss = registry.entry(bossId);
+		if (boss == null || !boss.owner().equals(player.getUUID()) || !boss.isBoss() || bossId.equals(id)) {
+			player.sendSystemMessage(Component.literal("Ese no es un jefe tuyo."));
+			return;
+		}
+		if (entry.isBoss()) {
+			player.sendSystemMessage(Component.literal(entry.name() + " es jefe: quítale el cargo antes de meterlo en otro equipo."));
+			return;
+		}
+		registry.setBoss(id, bossId);
+		player.sendSystemMessage(Component.literal(entry.name() + " entra en el equipo de " + boss.name() + "."));
 	}
 
 	/** Posición, distancia y dirección del becario respecto al jugador. */
@@ -477,7 +770,7 @@ public final class BecarioCommands {
 	private static BecarioEntity requireBecario(CommandSourceStack source) throws CommandSyntaxException {
 		BecarioEntity becario = findOwned(source.getPlayerOrException());
 		if (becario == null) {
-			source.sendFailure(Component.literal("No tienes ningún becario. Usa /becario invocar <nombre> <skin>."));
+			source.sendFailure(Component.literal(NO_BECARIO));
 		}
 		return becario;
 	}

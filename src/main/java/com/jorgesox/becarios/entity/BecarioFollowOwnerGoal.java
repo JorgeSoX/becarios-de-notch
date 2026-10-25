@@ -37,7 +37,8 @@ public class BecarioFollowOwnerGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		LivingEntity o = becario.getOwner();
+		// Si está en un equipo, sigue a su jefe; "ven aquí" siempre es hacia ti.
+		LivingEntity o = becario.isComing() ? becario.getOwner() : becario.getLeader();
 		if (o == null || o.level() != becario.level() || becario.unableToMoveToOwner()
 			|| !becario.getTrail().isEmpty()
 			|| becario.getCombatMode() == CombatMode.GUARDIA) {

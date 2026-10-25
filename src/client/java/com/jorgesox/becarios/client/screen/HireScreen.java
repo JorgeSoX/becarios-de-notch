@@ -42,9 +42,15 @@ public class HireScreen extends Screen {
 	private Button nextButton;
 	private int left;
 	private int top;
+	private final BecarioNetwork.OpenHire offer;
 
-	public HireScreen() {
+	public HireScreen(BecarioNetwork.OpenHire offer) {
 		super(Component.literal("Contratar becario"));
+		this.offer = offer;
+	}
+
+	private boolean affordable() {
+		return this.offer.free() || this.offer.emeralds() >= this.offer.cost();
 	}
 
 	@Override
@@ -86,6 +92,7 @@ public class HireScreen extends Screen {
 
 		this.hireButton = this.addRenderableWidget(Button.builder(Component.literal("Contratar"), b -> this.hire())
 			.bounds(this.left + PANEL_W - 170, this.top + PANEL_H - 26, 80, 20).build());
+		this.hireButton.active = this.affordable();
 		this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), b -> this.onClose())
 			.bounds(this.left + PANEL_W - 86, this.top + PANEL_H - 26, 76, 20).build());
 
@@ -135,6 +142,15 @@ public class HireScreen extends Screen {
 		String shownName = this.nameBox.getValue().trim().isEmpty() ? BecarioSkins.displayName(this.selected) : this.nameBox.getValue().trim();
 		g.text(this.font, "Se llamará: " + shownName, this.left + 112, this.top + 50, GuiStyle.TEXT, false);
 		g.text(this.font, "Arrastra: girar", this.left + 13, this.top + 162, 0xFF707070, false);
+		// Precio, en la columna de la izquierda, bajo la vista previa.
+		g.text(this.font, "Puesto " + (this.offer.count() + 1) + "/" + this.offer.max(), this.left + 10, this.top + 178, GuiStyle.TEXT, false);
+		if (this.offer.free()) {
+			g.text(this.font, "Gratis (creativo)", this.left + 10, this.top + 190, GuiStyle.TEXT_GREEN, false);
+		} else {
+			g.text(this.font, "Cuesta " + this.offer.cost() + " esm.", this.left + 10, this.top + 190,
+				this.affordable() ? GuiStyle.TEXT : GuiStyle.TEXT_RED, false);
+			g.text(this.font, "Llevas " + this.offer.emeralds(), this.left + 10, this.top + 202, 0xFF707070, false);
+		}
 		if (this.pageCount() > 1) {
 			String label = "Página " + (this.page + 1) + "/" + this.pageCount();
 			int pagesY = this.top + 64 + ROWS * (THUMB_H + 4);

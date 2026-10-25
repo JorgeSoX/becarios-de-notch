@@ -997,13 +997,12 @@ public class BecarioEntity extends TamableAnimal {
 		}
 	}
 
-	// ------------------------------------------------- uno por jugador
+	// ------------------------------------------------- plantilla del jugador
 
 	/**
-	 * Cada 5 s comprueba en el registro que sigue siendo EL becario de su dueño.
-	 * Si el dueño invocó otro mientras este estaba en una zona no cargada,
-	 * este se retira (soltando lo que llevaba). Si el dueño no tiene ninguno
-	 * registrado (becarios antiguos), se registra.
+	 * Cada 5 s se apunta (o se mantiene al día) en la plantilla de su dueño:
+	 * nombre y skin para el panel. Los becarios antiguos, de antes de la
+	 * plantilla, se apuntan solos la primera vez.
 	 */
 	@Override
 	public void tick() {
@@ -1029,29 +1028,45 @@ public class BecarioEntity extends TamableAnimal {
 		if (this.tickCount % 100 != 0) {
 			return;
 		}
+		BecarioRegistry registry = BecarioRegistry.get(level.getServer());
+		if (registry.takeFired(this.getUUID())) {
+			this.dropEverything(level); // lo despidieron estando lejos: deja lo que llevaba y se va
+			this.discard();
+			return;
+		}
 		LivingEntity owner = this.getOwner();
 		if (!(owner instanceof ServerPlayer)) {
 			return; // dueño desconectado: no decidimos nada
 		}
-		BecarioRegistry registry = BecarioRegistry.get(level.getServer());
-		UUID registered = registry.becarioOf(owner.getUUID());
-		if (registered == null) {
-			registry.set(owner.getUUID(), this.getUUID());
-		} else if (!registered.equals(this.getUUID())) {
-			this.dropEverything(level);
-			this.discard();
+		if (registry.entry(this.getUUID()) == null) {
+			registry.add(this.getUUID(), owner.getUUID(), this.getName().getString(), this.getSkin());
+		} else {
+			registry.refresh(this.getUUID(), this.getName().getString(), this.getSkin());
 		}
+	}
+
+	/**
+	 * A quién sigue cuando no tiene trabajo: a su jefe si está en un equipo
+	 * (y el jefe anda cerca, en la misma dimensión); si no, a su dueño.
+	 */
+	public @Nullable LivingEntity getLeader() {
+		if (this.level() instanceof ServerLevel level) {
+			BecarioRegistry.Entry entry = BecarioRegistry.get(level.getServer()).entry(this.getUUID());
+			if (entry != null && entry.boss().isPresent()
+				&& level.getEntity(entry.boss().get()) instanceof BecarioEntity boss && boss.isAlive()
+				&& boss.distanceToSqr(this) < 64.0 * 64.0) {
+				return boss;
+			}
+		}
+		return this.getOwner();
 	}
 
 	/** Al morir o ser despedido (no al descargarse el chunk), libera su hueco en el registro. */
 	@Override
 	public void remove(Entity.RemovalReason reason) {
 		if (reason.shouldDestroy() && this.level() instanceof ServerLevel level) {
-			LivingEntity owner = this.getOwner();
-			UUID ownerId = owner != null ? owner.getUUID() : null;
-			if (ownerId != null) {
-				BecarioRegistry.get(level.getServer()).clearIf(ownerId, this.getUUID());
-			}
+			BecarioRegistry.get(level.getServer()).remove(this.getUUID());
+			com.jorgesox.becarios.command.BecarioPanel.forgetBoss(this.getUUID());
 		}
 		super.remove(reason);
 	}

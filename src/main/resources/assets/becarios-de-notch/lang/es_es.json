@@ -1,3 +1,6 @@
 {
-	"entity.becarios-de-notch.becario": "Becario"
+	"entity.becarios-de-notch.becario": "Becario",
+	"block.becarios-de-notch.oficina": "Oficina de becarios",
+	"key.becarios-de-notch.panel": "Panel de becarios",
+	"key.category.becarios-de-notch.becarios": "Becarios de Notch"
 }

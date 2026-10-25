@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "#": "#minecraft:planks",
+    "B": "minecraft:book",
+    "E": "minecraft:emerald",
+    "C": "minecraft:crafting_table"
+  },
+  "pattern": [
+    "BEB",
+    "#C#",
+    "###"
+  ],
+  "result": {
+    "count": 1,
+    "id": "becarios-de-notch:oficina"
+  }
+}
