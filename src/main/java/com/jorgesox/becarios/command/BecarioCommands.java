@@ -497,12 +497,27 @@ public final class BecarioCommands {
 		}
 		ServerPlayer player = source.getPlayerOrException();
 		net.minecraft.core.Direction facing = player.getDirection();
-		// El hueco queda 3 bloques delante de ti, centrado.
-		net.minecraft.core.BlockPos base = player.blockPosition().relative(facing, 3).relative(facing.getCounterClockWise(), 0);
+		// El hueco queda 3 bloques delante de ti, apoyado en el suelo de ahí (aunque el terreno baje o suba).
+		net.minecraft.core.BlockPos base = groundAt(player.level(), player.blockPosition().relative(facing, 3));
 		becario.startBuild(com.jorgesox.becarios.build.BuildOrder.Kind.PORTAL, base, facing.getOpposite(), 0);
 		source.sendSuccess(() -> Component.literal(becario.getName().getString()
 			+ ": voy a hacer un portal al Nether aquí delante. Si no tengo obsidiana, voy a por ella (necesito pico de diamante)."), false);
 		return 1;
+	}
+
+	/**
+	 * El primer hueco con suelo firme debajo, buscando desde un poco más arriba
+	 * hacia abajo (sirve también en el Nether, donde el "cielo" es techo de roca).
+	 */
+	private static net.minecraft.core.BlockPos groundAt(ServerLevel level, net.minecraft.core.BlockPos near) {
+		for (int dy = 4; dy >= -12; dy--) {
+			net.minecraft.core.BlockPos pos = near.above(dy);
+			if (level.getBlockState(pos).canBeReplaced() && level.getBlockState(pos.above()).canBeReplaced()
+				&& level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), net.minecraft.core.Direction.UP)) {
+				return pos;
+			}
+		}
+		return near;
 	}
 
 	private static int collect(CommandSourceStack source) throws CommandSyntaxException {

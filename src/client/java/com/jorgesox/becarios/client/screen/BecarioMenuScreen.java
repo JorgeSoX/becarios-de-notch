@@ -84,7 +84,7 @@ public class BecarioMenuScreen extends Screen {
 		// Obras: delante de ti, mirando hacia ti. Él junta los materiales.
 		y += 28;
 		this.work("Casa peq.", "casa", 5, "Casa pequeña (5x5) delante de ti, con la puerta hacia ti.", x, y, w);
-		this.work("Casa grande", "casa", 7, "Casa grande (7x7) delante de ti, con la puerta hacia ti.", x + (w + gap), y, w);
+		this.work("Casa gr.", "casa", 7, "Casa grande (7x7) delante de ti, con la puerta hacia ti.", x + (w + gap), y, w);
 		this.work("Portal", "portal", 0, "Portal al Nether delante de ti. Si no tiene obsidiana, va a por ella (con pico de diamante).",
 			x + 2 * (w + gap), y, w);
 

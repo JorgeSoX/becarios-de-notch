@@ -159,7 +159,18 @@ public class BecarioEntity extends TamableAnimal {
 		// "quieto" sobre trabajar (3), y trabajar sobre seguir al dueño (4).
 		this.goalSelector.addGoal(0, new FloatGoal(this));
 		this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.25, true));
-		this.goalSelector.addGoal(2, new SitWhenOrderedToGoal(this));
+		// El de vanilla sienta a la mascota en cuanto el dueño cambia de dimensión:
+		// así nunca iría detrás de ti por el portal. Aquí solo se sienta si se lo mandas.
+		this.goalSelector.addGoal(2, new SitWhenOrderedToGoal(this) {
+			@Override
+			public boolean canUse() {
+				LivingEntity owner = BecarioEntity.this.getOwner();
+				if (owner != null && owner.level() != BecarioEntity.this.level() && !BecarioEntity.this.isOrderedToSit()) {
+					return false;
+				}
+				return super.canUse();
+			}
+		});
 		this.goalSelector.addGoal(2, new OpenDoorGoal(this, true));
 		this.goalSelector.addGoal(2, new PickUpMaterialsGoal(this));
 		this.goalSelector.addGoal(3, new BlockMiningGoal(this));
@@ -861,6 +872,8 @@ public class BecarioEntity extends TamableAnimal {
 
 	/** Camino que ha recorrido excavando/explorando, para volver por él. */
 	private final Deque<BlockPos> trail = new ArrayDeque<>();
+	/** Desde cuándo está su dueño en otra dimensión (0 = está en la misma). */
+	private long ownerAwaySince;
 
 	public void addTrail(BlockPos pos) {
 		if (this.trail.isEmpty() || !this.trail.peekLast().equals(pos)) {
@@ -1075,6 +1088,84 @@ public class BecarioEntity extends TamableAnimal {
 		}
 	}
 
+	// ------------------------------------------------------------- escudo
+
+	/** Ticks que le quedan con el escudo arriba después de pasar el peligro. */
+	private int shieldHold;
+
+	/**
+	 * Como un jugador: si ve venir una flecha (o una bola de fuego), un creeper a
+	 * punto de explotar, dinamita encendida o a un monstruo encima, levanta el
+	 * escudo mirando hacia el peligro. Si lleva el escudo en la mochila, se lo pone
+	 * en la mano izquierda. Para pegar lo baja un momento (ver doHurtTarget).
+	 */
+	private void defendWithShield(ServerLevel level) {
+		Entity threat = this.findThreat(level);
+		if (threat != null) {
+			if (!this.getOffhandItem().has(DataComponents.BLOCKS_ATTACKS) && !this.equipShield()) {
+				return;
+			}
+			this.getLookControl().setLookAt(threat, 30.0F, 30.0F);
+			if (!this.isUsingItem()) {
+				this.startUsingItem(InteractionHand.OFF_HAND);
+			}
+			this.shieldHold = 10;
+		} else if (this.shieldHold > 0 && --this.shieldHold == 0 && this.isUsingItem()
+			&& this.getUseItem().has(DataComponents.BLOCKS_ATTACKS)) {
+			this.stopUsingItem();
+		}
+	}
+
+	/** Saca el escudo de la mochila a la mano izquierda (lo que llevaba ahí va a la mochila). */
+	private boolean equipShield() {
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			ItemStack stack = this.inventory.getItem(slot);
+			if (stack.has(DataComponents.BLOCKS_ATTACKS)) {
+				this.inventory.setItem(slot, this.getOffhandItem().copy());
+				this.setItemSlot(EquipmentSlot.OFFHAND, stack.copy());
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private @Nullable Entity findThreat(ServerLevel level) {
+		LivingEntity owner = this.getOwner();
+		net.minecraft.world.phys.Vec3 me = this.position().add(0.0, 1.0, 0.0);
+		for (Entity e : level.getEntities(this, this.getBoundingBox().inflate(10.0))) {
+			if (e instanceof net.minecraft.world.entity.projectile.Projectile p) {
+				Entity shooter = p.getOwner();
+				if (shooter == this || shooter == owner || shooter instanceof BecarioEntity) {
+					continue;
+				}
+				net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
+				if (v.lengthSqr() < 0.04) {
+					continue; // clavada en el suelo
+				}
+				net.minecraft.world.phys.Vec3 to = me.subtract(p.position());
+				if (to.lengthSqr() < 100.0 && v.normalize().dot(to.normalize()) > 0.9) {
+					return p; // viene hacia él
+				}
+			} else if (e instanceof Creeper creeper && creeper.getSwelling(1.0F) > 0.0F && this.distanceToSqr(creeper) < 7.0 * 7.0) {
+				return creeper;
+			} else if (e instanceof net.minecraft.world.entity.item.PrimedTnt && this.distanceToSqr(e) < 6.0 * 6.0) {
+				return e;
+			} else if (e instanceof Mob mob && mob instanceof Enemy && mob.getTarget() == this && this.distanceToSqr(mob) < 3.0 * 3.0) {
+				return mob;
+			}
+		}
+		return null;
+	}
+
+	/** Para pegar baja el escudo (como un jugador: no se puede golpear cubriéndose). */
+	@Override
+	public boolean doHurtTarget(ServerLevel level, Entity target) {
+		if (this.isUsingItem() && this.getUseItem().has(DataComponents.BLOCKS_ATTACKS)) {
+			this.stopUsingItem();
+		}
+		return super.doHurtTarget(level, target);
+	}
+
 	/** Si está herido y no está peleando, come algo de su inventario. */
 	private void eatIfHurt(ServerLevel level) {
 		if (this.getHealth() > this.getMaxHealth() - 4.0F || this.getTarget() != null) {
@@ -1111,11 +1202,41 @@ public class BecarioEntity extends TamableAnimal {
 		if (this.tickCount % 60 == 0) {
 			this.eatIfHurt(level);
 		}
+		this.defendWithShield(level);
 		if (this.tickCount % 20 == 0) {
 			this.updateOwnerCompasses(level);
 		}
 		// Trabajando lejos (o volviendo): mantener cargada su zona, igual que un
 		// jugador carga los chunks a su alrededor. Si no, se "congelaría" al alejarse.
+		// Te vas a otra dimensión: en cuanto te ve dentro de un portal se prepara (su zona
+		// se queda cargada 2 minutos) para poder ir detrás de ti. Si esperase a que ya
+		// te hubieras ido, su zona se descargaría en ese mismo instante y se quedaría congelado.
+		boolean ownerAway = false;
+		LivingEntity awayOwner = this.getOwner();
+		if (awayOwner != null && awayOwner.level() == this.level()) {
+			if (this.distanceToSqr(awayOwner) < 48.0 * 48.0 && (this.ownerAwaySince != 0 || this.tickCount % 4 == 0)
+				&& nearPortal(level, awayOwner.blockPosition())) {
+				if (this.ownerAwaySince == 0) {
+					com.jorgesox.becarios.BecariosDeNotch.LOGGER.debug("[portal] {} ve a su dueño junto a un portal: se prepara", this.getName().getString());
+				}
+				this.ownerAwaySince = level.getGameTime();
+				ownerAway = true;
+			} else if (this.ownerAwaySince != 0 && level.getGameTime() - this.ownerAwaySince > 200) {
+				this.ownerAwaySince = 0; // estuvo en el portal pero no cruzó
+			}
+		} else if (awayOwner != null) {
+			if (this.ownerAwaySince == 0) {
+				this.ownerAwaySince = level.getGameTime();
+			}
+			ownerAway = level.getGameTime() - this.ownerAwaySince < 20 * 120;
+			if (this.tickCount % 40 == 0) {
+				com.jorgesox.becarios.BecariosDeNotch.LOGGER.debug("[portal] {} sin su dueño (en otra dimensión), cargado={}", this.getName().getString(), ownerAway);
+			}
+		}
+		if (ownerAway) { // cada tick: el primer instante sin ti es justo cuando se descargaría
+			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
+				net.minecraft.world.level.ChunkPos.containing(this.blockPosition()), 2);
+		}
 		if (this.tickCount % 20 == 0 && (this.task != null || this.craftOrder != null || this.buildOrder != null || !this.trail.isEmpty())) {
 			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
 				net.minecraft.world.level.ChunkPos.containing(this.blockPosition()), 2);
@@ -1154,6 +1275,19 @@ public class BecarioEntity extends TamableAnimal {
 			}
 		}
 		return this.getOwner();
+	}
+
+	/**
+	 * ¿Hay un portal a 2 bloques o menos? (En creativo el portal te lleva al instante:
+	 * hay que prepararse al verte llegar, no al verte dentro.)
+	 */
+	private static boolean nearPortal(ServerLevel level, BlockPos pos) {
+		for (BlockPos p : BlockPos.betweenClosed(pos.offset(-2, -1, -2), pos.offset(2, 2, 2))) {
+			if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Al morir o ser despedido (no al descargarse el chunk), libera su hueco en el registro. */

@@ -22,6 +22,7 @@ public class PickUpMaterialsGoal extends Goal {
 	private final BecarioEntity becario;
 	private @Nullable ItemEntity item;
 	private int timeout;
+	private int cooldown;
 
 	public PickUpMaterialsGoal(BecarioEntity becario) {
 		this.becario = becario;
@@ -32,9 +33,10 @@ public class PickUpMaterialsGoal extends Goal {
 	public boolean canUse() {
 		BecarioTask task = becario.getTask();
 		if (task == null || task.gatherItems == null || becario.isOrderedToSit() || becario.getTarget() != null
-			|| !becario.hasInventorySpace() || becario.tickCount % 10 != 0) {
+			|| !becario.hasInventorySpace() || --cooldown > 0) {
 			return false;
 		}
+		cooldown = 5;
 		item = becario.level().getEntitiesOfClass(ItemEntity.class, becario.getBoundingBox().inflate(RANGE, 4.0, RANGE),
 				e -> e.isAlive() && !e.getItem().isEmpty() && task.gatherItems.test(e.getItem()))
 			.stream().min(Comparator.comparingDouble(becario::distanceToSqr)).orElse(null);
