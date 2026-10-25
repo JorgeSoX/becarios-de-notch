@@ -59,6 +59,8 @@ public class ExpeditionGoal extends Goal {
 	/** Pasos que debe avanzar en horizontal para salir de un atasco antes de volver a bajar. */
 	private int escapeSteps;
 	private final Set<BlockPos> badOres = new HashSet<>();
+	/** Ya ha avisado de que no tiene antorchas (una vez por orden). */
+	private boolean warnedNoTorches;
 
 	// Estado de este intento.
 	private int ticks;
@@ -98,6 +100,7 @@ public class ExpeditionGoal extends Goal {
 			failedDirections = 0;
 			escapeSteps = 0;
 			badOres.clear();
+			warnedNoTorches = false;
 			becario.clearTrail();
 		} else if (isSurface(task)) {
 			dir = dir.getClockWise(); // en superficie, cada intento hacia otro lado
@@ -336,6 +339,7 @@ public class ExpeditionGoal extends Goal {
 			if (arrived) {
 				becario.addTrail(stepTarget);
 				stepTarget = null;
+				lightTunnel(level);
 				stepsThisRun++;
 				failedDirections = 0;
 				if (escapeSteps > 0) {
@@ -403,6 +407,17 @@ public class ExpeditionGoal extends Goal {
 		}
 		stepTarget = next;
 		stepTicks = 0;
+	}
+
+	/** Antorcha si se ha quedado a oscuras (avisa una vez si no tiene con qué). */
+	private void lightTunnel(ServerLevel level) {
+		TunnelLighting.Result result = TunnelLighting.lightIfDark(level, becario);
+		if (result == TunnelLighting.Result.LIT) {
+			debug("antorcha");
+		} else if (result == TunnelLighting.Result.NO_TORCHES && !warnedNoTorches) {
+			warnedNoTorches = true;
+			becario.tell("no tengo antorchas ni carbón para hacerlas. Sigo a oscuras; si me das carbón, voy alumbrando.");
+		}
 	}
 
 	/** Esta dirección no vale: probar la siguiente. Si ninguna vale, mirar en otra zona. */

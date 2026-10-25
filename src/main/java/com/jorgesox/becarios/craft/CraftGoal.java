@@ -5,6 +5,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
+import com.jorgesox.becarios.BecariosDeNotch;
 import com.jorgesox.becarios.entity.BecarioEntity;
 import com.jorgesox.becarios.task.BecarioTask;
 import com.jorgesox.becarios.task.BlockGroups;
@@ -33,6 +34,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -178,8 +181,7 @@ public class CraftGoal extends Goal {
 					return;
 				}
 				if (station == null) {
-					order.failures++;
-					wait = 40;
+					stuck(order, "no encuentro sitio para la mesa de trabajo");
 					return;
 				}
 				pending = craft;
@@ -196,8 +198,7 @@ public class CraftGoal extends Goal {
 					return;
 				}
 				if (station == null) {
-					order.failures++;
-					wait = 40;
+					stuck(order, "no encuentro sitio para el horno");
 					return;
 				}
 				pending = smelt;
@@ -252,7 +253,7 @@ public class CraftGoal extends Goal {
 				becario.getNavigation().moveTo(center.x, station.getY(), center.z, 1.0);
 			}
 			if (++walkTicks > GOTO_TIMEOUT) {
-				order.failures++;
+				stuck(order, "no llego a la estación en " + station);
 				phase = Phase.PLAN;
 			}
 			return;
@@ -279,7 +280,7 @@ public class CraftGoal extends Goal {
 			made++;
 		}
 		if (made == 0) {
-			order.failures++;
+			stuck(order, "no tengo los ingredientes de " + craft.recipe().result().getItem());
 		} else {
 			order.failures = 0;
 		}
@@ -287,71 +288,16 @@ public class CraftGoal extends Goal {
 		wait = 10; // un pequeño respiro entre fabricaciones, como un jugador
 	}
 
-	/** Quita del inventario (o la mano izquierda) un objeto para cada ingrediente. Todo o nada. */
 	private boolean consumeOnce(List<Ingredient> ingredients) {
-		List<ItemStack> stacks = slots();
-		int[] left = new int[stacks.size()];
-		for (int i = 0; i < stacks.size(); i++) {
-			left[i] = stacks.get(i).getCount();
-		}
-		int[] chosen = new int[ingredients.size()];
-		for (int n = 0; n < ingredients.size(); n++) {
-			Ingredient ingredient = ingredients.get(n);
-			int pick = -1;
-			for (int pass = 0; pass < 2 && pick < 0; pass++) {
-				for (int i = 0; i < stacks.size(); i++) {
-					ItemStack stack = stacks.get(i);
-					// Primera pasada: sin gastar herramientas.
-					if (left[i] > 0 && ingredient.test(stack) && (pass == 1 || !stack.isDamageableItem())) {
-						pick = i;
-						break;
-					}
-				}
-			}
-			if (pick < 0) {
-				return false;
-			}
-			left[pick]--;
-			chosen[n] = pick;
-		}
-		for (int index : chosen) {
-			stacks.get(index).shrink(1);
-		}
-		becario.getInventory().setChanged();
-		return true;
+		return Pockets.consumeOnce(becario, ingredients);
 	}
 
-	/** Inventario + mano izquierda (los bloques de relleno suelen ir ahí). */
 	private List<ItemStack> slots() {
-		List<ItemStack> stacks = new ArrayList<>();
-		for (int slot = 0; slot < becario.getInventory().getContainerSize(); slot++) {
-			stacks.add(becario.getInventory().getItem(slot));
-		}
-		stacks.add(becario.getItemBySlot(EquipmentSlot.OFFHAND));
-		return stacks;
+		return Pockets.slots(becario);
 	}
 
-	/** Saca hasta `count` objetos que cumplan la condición. */
 	private ItemStack take(java.util.function.Predicate<ItemStack> test, int count) {
-		ItemStack out = ItemStack.EMPTY;
-		for (ItemStack stack : slots()) {
-			if (count <= 0) {
-				break;
-			}
-			if (stack.isEmpty() || !test.test(stack) || (!out.isEmpty() && !ItemStack.isSameItemSameComponents(out, stack))) {
-				continue;
-			}
-			int n = Math.min(count, stack.getCount());
-			if (out.isEmpty()) {
-				out = stack.copyWithCount(n);
-			} else {
-				out.grow(n);
-			}
-			stack.shrink(n);
-			count -= n;
-		}
-		becario.getInventory().setChanged();
-		return out;
+		return Pockets.take(becario, test, count);
 	}
 
 	// ---------------------------------------------------------------- horno
@@ -365,7 +311,7 @@ public class CraftGoal extends Goal {
 		Ingredient input = smelt.recipe().input();
 		ItemStack toCook = take(input::test, times);
 		if (toCook.isEmpty()) {
-			order.failures++;
+			stuck(order, "no tengo qué meter al horno");
 			phase = Phase.PLAN;
 			return;
 		}
@@ -380,7 +326,7 @@ public class CraftGoal extends Goal {
 		}
 		if (fuel.isEmpty()) {
 			becario.storeOrDrop(level, toCook);
-			order.failures++;
+			stuck(order, "no tengo combustible");
 			phase = Phase.PLAN;
 			return;
 		}
@@ -475,25 +421,22 @@ public class CraftGoal extends Goal {
 			return null;
 		}
 		BlockPos feet = becario.blockPosition();
-		for (int r = 1; r <= 2; r++) {
-			for (int dy : new int[] {0, -1, 1}) {
-				for (Direction d : Direction.Plane.HORIZONTAL) {
-					BlockPos p = feet.relative(d, r).above(dy);
-					BlockState here = level.getBlockState(p);
-					if (!here.canBeReplaced() || !level.getFluidState(p).isEmpty()) {
-						continue;
+		// Primero un sitio "bonito" (con suelo); si no, cualquiera donde pueda apoyarlo,
+		// como un jugador que lo pega a una pared o al techo.
+		for (boolean wantFloor : new boolean[] {true, false}) {
+			for (int r = 1; r <= 2; r++) {
+				for (int dy : new int[] {0, -1, 1}) {
+					for (Direction d : Direction.Plane.HORIZONTAL) {
+						BlockPos p = feet.relative(d, r).above(dy);
+						if (!canPlaceAt(level, p, wantFloor)) {
+							continue;
+						}
+						level.setBlock(p, state, Block.UPDATE_ALL);
+						level.playSound(null, p, state.getSoundType().getPlaceSound(), SoundSource.BLOCKS, 1.0F, 1.0F);
+						becario.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT);
+						order.placed.add(p.immutable());
+						return p.immutable();
 					}
-					if (!level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) {
-						continue;
-					}
-					if (becario.getOwner() != null && becario.getOwner().blockPosition().equals(p)) {
-						continue;
-					}
-					level.setBlock(p, state, Block.UPDATE_ALL);
-					level.playSound(null, p, state.getSoundType().getPlaceSound(), SoundSource.BLOCKS, 1.0F, 1.0F);
-					becario.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT);
-					order.placed.add(p.immutable());
-					return p.immutable();
 				}
 			}
 		}
@@ -514,6 +457,31 @@ public class CraftGoal extends Goal {
 
 	private @Nullable BlockPos niche;
 
+	/** Hueco libre (sin líquido ni nadie dentro) y con algún bloque al lado donde apoyarlo. */
+	private boolean canPlaceAt(ServerLevel level, BlockPos p, boolean wantFloor) {
+		if (!level.getBlockState(p).canBeReplaced() || !level.getFluidState(p).isEmpty()) {
+			return false;
+		}
+		AABB box = new AABB(p);
+		if (becario.getBoundingBox().intersects(box)) {
+			return false;
+		}
+		LivingEntity owner = becario.getOwner();
+		if (owner != null && owner.getBoundingBox().intersects(box)) {
+			return false;
+		}
+		if (wantFloor) {
+			return level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP);
+		}
+		for (Direction d : Direction.values()) {
+			BlockPos n = p.relative(d);
+			if (!level.getBlockState(n).canBeReplaced()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void digNiche(ServerLevel level, CraftOrder order) {
 		if (niche == null) {
 			phase = Phase.PLAN;
@@ -522,9 +490,20 @@ public class CraftGoal extends Goal {
 		becario.getLookControl().setLookAt(niche.getX() + 0.5, niche.getY() + 0.5, niche.getZ() + 0.5);
 		Breaker.Result result = breaker.tick(level, niche, false);
 		if (result != Breaker.Result.WORKING) {
+			if (result != Breaker.Result.BROKEN) {
+				stuck(order, "no puedo cavar el hueco en " + niche + " (" + result + ")");
+			}
 			niche = null;
 			phase = Phase.PLAN;
 		}
+	}
+
+	/** Un paso que no ha salido: cuenta para "me he atascado" y deja el motivo en el log. */
+	private void stuck(CraftOrder order, String why) {
+		order.failures++;
+		wait = 40;
+		BecariosDeNotch.LOGGER.info("[fabrica] {} fallo {}/{}: {} (pos={})", becario.getName().getString(),
+			order.failures, MAX_FAILURES, why, becario.blockPosition());
 	}
 
 	private Direction facingBecario() {
@@ -595,12 +574,9 @@ public class CraftGoal extends Goal {
 	private int countMatching(java.util.function.Predicate<ItemStack> test) {
 		int count = 0;
 		for (ItemStack stack : slots()) {
-			if (test.test(stack)) {
+			if (!stack.isEmpty() && test.test(stack)) {
 				count += stack.getCount();
 			}
-		}
-		if (test.test(becario.getMainHandItem())) {
-			count += becario.getMainHandItem().getCount();
 		}
 		return count;
 	}
