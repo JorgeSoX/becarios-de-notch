@@ -56,7 +56,7 @@ public final class BecarioCommands {
 	private static final int MAX_NAME_LENGTH = 32;
 	/** Acciones que necesitan al becario cargado (las demás tocan solo la plantilla). */
 	private static final java.util.Set<String> NEEDS_PRESENT = java.util.Set.of(
-		"sigue", "quieto", "ven", "para", "recoge", "dame", "brujula", "tala", "mina", "inventario", "modo", "casa", "portal");
+		"sigue", "quieto", "ven", "para", "recoge", "dame", "brujula", "tala", "mina", "inventario", "modo", "casa", "portal", "fabrica");
 	private static final String NO_BECARIO = "No tienes ningún becario cerca. Pulsa B (o usa una Oficina) para contratar o elegir uno.";
 
 	private BecarioCommands() {
@@ -481,13 +481,33 @@ public final class BecarioCommands {
 		if (entry == null || Area.of(entry.area()) != area) {
 			return crew;
 		}
-		for (BecarioRegistry.Entry member : registry.team(becario.getUUID())) {
+		addTeam(player, becario, registry, becario.getUUID(), area, crew, 0);
+		return crew;
+	}
+
+	/**
+	 * Mete en `crew` el equipo de `boss` y, si alguno es a su vez jefe de la misma
+	 * área, también el equipo de ese (jerarquía). Un subjefe de otra área se queda
+	 * con lo suyo.
+	 */
+	private static void addTeam(ServerPlayer player, BecarioEntity root, BecarioRegistry registry, UUID boss, Area area,
+			List<BecarioEntity> crew, int depth) {
+		if (depth > 6) {
+			return;
+		}
+		for (BecarioRegistry.Entry member : registry.team(boss)) {
+			Area memberArea = Area.of(member.area());
+			if (memberArea != null && memberArea != area) {
+				continue;
+			}
 			BecarioEntity m = BecarioPanel.find(player.level().getServer(), member.id());
-			if (m != null && m.level() == becario.level() && m.distanceToSqr(becario) < 64.0 * 64.0) {
+			if (m != null && m.level() == root.level() && m.distanceToSqr(root) < 64.0 * 64.0 && !crew.contains(m)) {
 				crew.add(m);
 			}
+			if (memberArea == area) {
+				addTeam(player, root, registry, member.id(), area, crew, depth + 1);
+			}
 		}
-		return crew;
 	}
 
 	/** /becario fabrica <objeto> [cantidad]: consigue todo lo necesario y lo fabrica. */
@@ -755,6 +775,13 @@ public final class BecarioCommands {
 				case "brujula" -> giveCompass(source);
 				case "tala" -> mine(source, "madera", clamped);
 				case "mina" -> mine(source, arg, clamped);
+				case "fabrica" -> {
+					net.minecraft.resources.Identifier key = net.minecraft.resources.Identifier.tryParse(arg);
+					var item = key == null ? null : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key).orElse(null);
+					if (item != null && item != net.minecraft.world.item.Items.AIR) {
+						craft(source, item, clamped);
+					}
+				}
 				case "inventario" -> inventory(source);
 				case "modo" -> {
 					CombatMode mode = CombatMode.valueOf(arg);
@@ -790,9 +817,10 @@ public final class BecarioCommands {
 				+ (team > 0 ? " (su equipo de " + team + " queda libre)." : ".")));
 			return;
 		}
+		boolean wasBoss = entry.isBoss();
 		registry.setArea(id, area.name());
 		player.sendSystemMessage(Component.literal(entry.name() + " es ahora jefe de " + area.label().toLowerCase()
-			+ ". Mete gente en su equipo desde el panel; cuando le mandes trabajo, lo repartirá."));
+			+ (wasBoss ? " (con el mismo equipo)." : ". Mete gente en su equipo desde el panel; cuando le mandes trabajo, lo repartirá.")));
 	}
 
 	/** Meter a un becario en el equipo de un jefe (arg = UUID del jefe) o sacarlo (arg vacío). */
@@ -821,12 +849,13 @@ public final class BecarioCommands {
 			player.sendSystemMessage(Component.literal("Ese no es un jefe tuyo."));
 			return;
 		}
-		if (entry.isBoss()) {
-			player.sendSystemMessage(Component.literal(entry.name() + " es jefe: quítale el cargo antes de meterlo en otro equipo."));
+		if (registry.isUnder(bossId, id)) {
+			player.sendSystemMessage(Component.literal(boss.name() + " ya está a las órdenes de " + entry.name() + ": no puede ser su jefe a la vez."));
 			return;
 		}
 		registry.setBoss(id, bossId);
-		player.sendSystemMessage(Component.literal(entry.name() + " entra en el equipo de " + boss.name() + "."));
+		player.sendSystemMessage(Component.literal(entry.name() + " entra en el equipo de " + boss.name()
+			+ (entry.isBoss() ? " (con todo su equipo)." : ".")));
 	}
 
 	/** Posición, distancia y dirección del becario respecto al jugador. */

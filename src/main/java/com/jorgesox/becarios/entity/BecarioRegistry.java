@@ -169,7 +169,8 @@ public class BecarioRegistry extends SavedData {
 		}
 		for (Entry entry : new ArrayList<>(this.entries.values())) {
 			if (entry.boss().isPresent() && entry.boss().get().equals(becario)) {
-				this.entries.put(entry.id(), entry.withBoss(null));
+				// su equipo pasa al jefe de arriba (si lo había)
+				this.entries.put(entry.id(), entry.withBoss(removed.boss().orElse(null)));
 			}
 		}
 		this.selected.values().removeIf(becario::equals);
@@ -204,17 +205,26 @@ public class BecarioRegistry extends SavedData {
 		if (entry == null) {
 			return;
 		}
-		Entry updated = entry.withArea(area);
-		if (!area.isEmpty()) {
-			updated = updated.withBoss(null); // un jefe no está en el equipo de otro
-		}
-		this.entries.put(becario, updated);
+		// (un jefe puede seguir en el equipo de otro jefe: jerarquía)
+		this.entries.put(becario, entry.withArea(area));
 		if (area.isEmpty()) {
 			for (Entry member : this.team(becario)) {
-				this.entries.put(member.id(), member.withBoss(null));
+				this.entries.put(member.id(), member.withBoss(entry.boss().orElse(null))); // pasan al jefe de arriba, si lo hay
 			}
 		}
 		this.setDirty();
+	}
+
+	/** ¿Está `becario` por debajo de `boss` en la jerarquía (directa o indirectamente)? */
+	public boolean isUnder(UUID becario, UUID boss) {
+		Entry entry = this.entries.get(becario);
+		for (int guard = 0; guard < 8 && entry != null && entry.boss().isPresent(); guard++) {
+			if (entry.boss().get().equals(boss)) {
+				return true;
+			}
+			entry = this.entries.get(entry.boss().get());
+		}
+		return false;
 	}
 
 	public void setBoss(UUID becario, @Nullable UUID boss) {

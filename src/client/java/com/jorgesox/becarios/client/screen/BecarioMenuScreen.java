@@ -80,6 +80,11 @@ public class BecarioMenuScreen extends Screen {
 			this.send("mina", this.targets.get(targetIndex), AMOUNTS[amountIndex], true)).bounds(x, y, w, 20).build());
 		this.addRenderableWidget(Button.builder(Component.literal("Talar"), b ->
 			this.send("tala", "", AMOUNTS[amountIndex], true)).bounds(x + (w + gap), y, w, 20).build());
+		Button craft = Button.builder(Component.literal("Fabricar…"), b ->
+			this.minecraft.gui.setScreen(new CraftScreen(this.data))).bounds(x + 2 * (w + gap), y, w, 20).build();
+		craft.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+			"Elige qué fabricar. Consigue él los materiales que le falten.")));
+		this.addRenderableWidget(craft);
 
 		// Obras: delante de ti, mirando hacia ti. Él junta los materiales.
 		y += 28;

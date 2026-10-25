@@ -4,6 +4,7 @@ import java.util.EnumSet;
 
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.pathfinder.PathType;
 
@@ -87,9 +88,23 @@ public class BecarioFollowOwnerGoal extends Goal {
 		double distSq = becario.distanceToSqr(owner);
 		becario.setSprinting(distSq > SPRINT_FROM * SPRINT_FROM);
 
+		// Si vuelas (creativo) o estás saltando un precipicio, va al suelo que hay
+		// bajo tus pies; si debajo no hay suelo cerca, te espera en el borde en vez
+		// de intentar llegar hasta ti y caerse.
+		BlockPos ground = groundBelow(owner);
+		if (ground == null) {
+			becario.getNavigation().stop();
+			noProgressTicks = 0;
+			bestDistSq = distSq;
+			return;
+		}
 		if (--recalc <= 0) {
 			recalc = adjustedTickDelay(10);
-			becario.getNavigation().moveTo(owner, 1.0);
+			if (owner.onGround() || owner.isInWater()) {
+				becario.getNavigation().moveTo(owner, 1.0);
+			} else {
+				becario.getNavigation().moveTo(ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5, 1.0);
+			}
 		}
 
 		// Detección de atasco: ¿se ha acercado al menos 1 bloque en los últimos 10 s?
@@ -109,5 +124,21 @@ public class BecarioFollowOwnerGoal extends Goal {
 				becario.tell("no encuentro camino hasta ti. Ven a buscarme o ábreme paso.");
 			}
 		}
+	}
+
+	/** Dónde pisaría el dueño: su posición si está en el suelo; si no, el suelo firme hasta 5 bloques por debajo. */
+	private @org.jspecify.annotations.Nullable BlockPos groundBelow(LivingEntity o) {
+		BlockPos pos = o.blockPosition();
+		if (o.onGround() || o.isInWater() || o.isPassenger()) {
+			return pos;
+		}
+		for (int dy = 0; dy <= 5; dy++) {
+			BlockPos p = pos.below(dy);
+			if (!o.level().getFluidState(p.below()).isEmpty()
+				|| o.level().getBlockState(p.below()).isFaceSturdy(o.level(), p.below(), net.minecraft.core.Direction.UP)) {
+				return p;
+			}
+		}
+		return null;
 	}
 }

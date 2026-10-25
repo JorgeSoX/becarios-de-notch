@@ -861,9 +861,77 @@ public class BecarioEntity extends TamableAnimal {
 	@Override
 	public void die(DamageSource source) {
 		if (this.level() instanceof ServerLevel level) {
-			this.dropEverything(level);
+			this.leaveGrave(level);
 		}
 		super.die(source);
+	}
+
+	/**
+	 * Al morir deja sus cosas en un cofre donde ha caído (para que no se pierdan
+	 * a los 5 minutos ni las queme la lava) y te dice dónde está.
+	 */
+	private void leaveGrave(ServerLevel level) {
+		List<ItemStack> stacks = new ArrayList<>();
+		for (int slot = 0; slot < this.inventory.getContainerSize(); slot++) {
+			ItemStack stack = this.inventory.removeItemNoUpdate(slot);
+			if (!stack.isEmpty()) {
+				stacks.add(stack);
+			}
+		}
+		for (EquipmentSlot slot : allWornSlots()) {
+			ItemStack stack = this.getItemBySlot(slot);
+			if (!stack.isEmpty()) {
+				stacks.add(stack.copy());
+				this.setItemSlot(slot, ItemStack.EMPTY);
+			}
+		}
+		BlockPos where = this.blockPosition();
+		BlockPos chest = stacks.isEmpty() ? null : this.findGraveSpot(level);
+		int index = 0;
+		BlockPos pos = chest;
+		while (pos != null && index < stacks.size()) {
+			level.setBlock(pos, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState(), 3);
+			if (!(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity box)) {
+				break;
+			}
+			for (int i = 0; i < box.getContainerSize() && index < stacks.size(); i++) {
+				box.setItem(i, stacks.get(index++));
+			}
+			// Si no cabe todo, otro cofre encima.
+			pos = index < stacks.size() && level.getBlockState(pos.above()).canBeReplaced() ? pos.above() : null;
+		}
+		for (; index < stacks.size(); index++) {
+			this.spawnAtLocation(level, stacks.get(index));
+		}
+		if (chest != null) {
+			where = chest;
+		}
+		String dim = level.dimension() == net.minecraft.world.level.Level.NETHER ? " (en el Nether)"
+			: level.dimension() == net.minecraft.world.level.Level.END ? " (en el End)" : "";
+		if (this.getOwner() instanceof ServerPlayer owner) {
+			owner.sendSystemMessage(Component.literal(this.getName().getString() + " ha muerto en "
+				+ where.getX() + ", " + where.getY() + ", " + where.getZ() + dim
+				+ (chest != null ? ". Sus cosas están en un cofre allí." : ".")));
+		}
+	}
+
+	/** Un hueco libre (sin agua ni lava) donde poner el cofre, cerca de donde murió. */
+	private @Nullable BlockPos findGraveSpot(ServerLevel level) {
+		BlockPos base = this.blockPosition();
+		if (base.getY() < level.getMinY()) {
+			return null; // cayó al vacío: no hay dónde
+		}
+		for (int dy = 0; dy <= 10; dy++) {
+			for (int r = 0; r <= 2; r++) {
+				for (BlockPos p : BlockPos.betweenClosed(base.offset(-r, dy, -r), base.offset(r, dy, r))) {
+					if (level.getBlockState(p).canBeReplaced() && level.getFluidState(p).isEmpty()
+						&& level.isInWorldBounds(p) && !level.getFluidState(p.below()).is(net.minecraft.tags.FluidTags.LAVA)) {
+						return p.immutable();
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	// ------------------------------------------- recoger, equipar y comer
@@ -1091,6 +1159,22 @@ public class BecarioEntity extends TamableAnimal {
 	// ------------------------------------------------------------- escudo
 
 	/** Ticks que le quedan con el escudo arriba después de pasar el peligro. */
+	/**
+	 * Si se queda metido en un bloque (le cae grava encima, un pistón...), pica
+	 * para salir como haría un jugador, en vez de ahogarse.
+	 */
+	private void digOutOfWall(ServerLevel level) {
+		BlockPos feet = this.blockPosition();
+		BlockPos head = BlockPos.containing(this.getX(), this.getEyeY(), this.getZ());
+		for (BlockPos p : new BlockPos[] { head, feet }) {
+			net.minecraft.world.level.block.state.BlockState state = level.getBlockState(p);
+			if (state.isSuffocating(level, p) && state.getDestroySpeed(level, p) >= 0
+				&& !state.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+				level.destroyBlock(p, true, this);
+			}
+		}
+	}
+
 	private int shieldHold;
 
 	/**
@@ -1203,6 +1287,9 @@ public class BecarioEntity extends TamableAnimal {
 			this.eatIfHurt(level);
 		}
 		this.defendWithShield(level);
+		if (this.tickCount % 5 == 0 && this.isInWall()) {
+			this.digOutOfWall(level);
+		}
 		if (this.tickCount % 20 == 0) {
 			this.updateOwnerCompasses(level);
 		}
@@ -1216,9 +1303,6 @@ public class BecarioEntity extends TamableAnimal {
 		if (awayOwner != null && awayOwner.level() == this.level()) {
 			if (this.distanceToSqr(awayOwner) < 48.0 * 48.0 && (this.ownerAwaySince != 0 || this.tickCount % 4 == 0)
 				&& nearPortal(level, awayOwner.blockPosition())) {
-				if (this.ownerAwaySince == 0) {
-					com.jorgesox.becarios.BecariosDeNotch.LOGGER.debug("[portal] {} ve a su dueño junto a un portal: se prepara", this.getName().getString());
-				}
 				this.ownerAwaySince = level.getGameTime();
 				ownerAway = true;
 			} else if (this.ownerAwaySince != 0 && level.getGameTime() - this.ownerAwaySince > 200) {
@@ -1229,9 +1313,6 @@ public class BecarioEntity extends TamableAnimal {
 				this.ownerAwaySince = level.getGameTime();
 			}
 			ownerAway = level.getGameTime() - this.ownerAwaySince < 20 * 120;
-			if (this.tickCount % 40 == 0) {
-				com.jorgesox.becarios.BecariosDeNotch.LOGGER.debug("[portal] {} sin su dueño (en otra dimensión), cargado={}", this.getName().getString(), ownerAway);
-			}
 		}
 		if (ownerAway) { // cada tick: el primer instante sin ti es justo cuando se descargaría
 			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,

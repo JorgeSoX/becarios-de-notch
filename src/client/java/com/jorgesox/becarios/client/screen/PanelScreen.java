@@ -111,19 +111,26 @@ public class PanelScreen extends Screen {
 			this.addRenderableWidget(compass);
 
 			by += 24;
-			// Cargo: nada -> jefe de cada área -> nada.
-			this.addRenderableWidget(Button.builder(this.roleLabel(entry), b -> {
-				this.send(entry.id(), "jefe", this.nextArea(entry.area()), 0);
+			// Cargo: clic = siguiente área (si ya es jefe, su equipo se queda);
+			// Mayús+clic = quitarle el cargo (su equipo queda libre).
+			Button role = Button.builder(this.roleLabel(entry), b -> {
+				boolean remove = this.minecraft.hasShiftDown() && !entry.area().isEmpty();
+				this.send(entry.id(), "jefe", remove ? "" : this.nextArea(entry.area()), 0);
 				this.send("", "panel", "", 0);
-			}).bounds(bx, by, w * 3 + gap * 2, 20).build());
+			}).bounds(bx, by, w * 3 + gap * 2, 20).build();
+			role.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(entry.area().isEmpty()
+				? "Clic: hacerlo jefe. Repartirá entre su equipo el trabajo de su área."
+				: "Clic: cambiar de área (su equipo se queda). Mayús+clic: quitarle el cargo.")));
+			this.addRenderableWidget(role);
 
 			by += 24;
-			// Equipo: ninguno -> cada jefe -> ninguno (los jefes no van en equipos).
+			// Equipo: ninguno -> cada jefe -> ninguno. Un jefe también puede ir en el
+			// equipo de otro jefe (jerarquía), pero no en el de uno de sus subordinados.
 			Button team = Button.builder(this.teamLabel(entry), b -> {
 				this.send(entry.id(), "asignar", this.nextBoss(entry), 0);
 				this.send("", "panel", "", 0);
 			}).bounds(bx, by, w * 3 + gap * 2, 20).build();
-			team.active = entry.area().isEmpty() && !this.bosses(entry).isEmpty();
+			team.active = !this.bosses(entry).isEmpty();
 			this.addRenderableWidget(team);
 
 			by += 24;
@@ -168,26 +175,44 @@ public class PanelScreen extends Screen {
 		if (area == null) {
 			return Area.values()[0].name();
 		}
-		int next = area.ordinal() + 1;
-		return next < Area.values().length ? Area.values()[next].name() : "";
+		return Area.values()[(area.ordinal() + 1) % Area.values().length].name();
 	}
 
 	/** Los jefes a los que puede ir este becario. */
 	private List<BecarioNetwork.PanelEntry> bosses(BecarioNetwork.PanelEntry entry) {
 		List<BecarioNetwork.PanelEntry> out = new ArrayList<>();
 		for (BecarioNetwork.PanelEntry other : this.data.entries()) {
-			if (!other.area().isEmpty() && !other.id().equals(entry.id())) {
+			if (!other.area().isEmpty() && !other.id().equals(entry.id()) && !this.isUnder(other, entry.id())) {
 				out.add(other);
 			}
 		}
 		return out;
 	}
 
-	private Component teamLabel(BecarioNetwork.PanelEntry entry) {
-		if (!entry.area().isEmpty()) {
-			return Component.literal("Equipo: dirige a " + entry.teamSize());
+	/** ¿Está `other` por debajo de `bossId` en la jerarquía (en su equipo, o en el de alguien de su equipo...)? */
+	private boolean isUnder(BecarioNetwork.PanelEntry other, String bossId) {
+		String up = other.bossId();
+		for (int guard = 0; guard < 8 && !up.isEmpty(); guard++) {
+			if (up.equals(bossId)) {
+				return true;
+			}
+			String next = "";
+			for (BecarioNetwork.PanelEntry e : this.data.entries()) {
+				if (e.id().equals(up)) {
+					next = e.bossId();
+				}
+			}
+			up = next;
 		}
-		return Component.literal("Equipo: " + (entry.bossId().isEmpty() ? "ninguno (te sigue a ti)" : "de " + entry.bossName()) + " ▸");
+		return false;
+	}
+
+	private Component teamLabel(BecarioNetwork.PanelEntry entry) {
+		String mine = entry.bossId().isEmpty() ? "ninguno (te sigue a ti)" : "de " + entry.bossName();
+		if (!entry.area().isEmpty()) {
+			return Component.literal("Dirige a " + entry.teamSize() + " · equipo: " + (entry.bossId().isEmpty() ? "ninguno" : entry.bossName()) + " ▸");
+		}
+		return Component.literal("Equipo: " + mine + " ▸");
 	}
 
 	private String nextBoss(BecarioNetwork.PanelEntry entry) {
