@@ -50,7 +50,7 @@ Más cosas de los equipos:
 
 Cambiar el cargo de un jefe:
 - **Clic** en el cargo cambia el área, y el jefe conserva su equipo.
-- **Mayús + clic** le quita el cargo, y su equipo pasa al jefe de arriba (o queda libre).
+- **Quitar** le quita el cargo, y su equipo pasa al jefe de arriba (o queda libre).
 
 ## Otras cosas
 

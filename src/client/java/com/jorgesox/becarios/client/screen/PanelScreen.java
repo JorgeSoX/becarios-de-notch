@@ -111,17 +111,26 @@ public class PanelScreen extends Screen {
 			this.addRenderableWidget(compass);
 
 			by += 24;
-			// Cargo: clic = siguiente área (si ya es jefe, su equipo se queda);
-			// Mayús+clic = quitarle el cargo (su equipo queda libre).
+			// Cargo: clic = siguiente área (si ya es jefe, su equipo se queda).
+			// "Quitar" le quita el cargo: su equipo pasa al jefe de arriba o queda libre.
+			boolean boss = !entry.area().isEmpty();
 			Button role = Button.builder(this.roleLabel(entry), b -> {
-				boolean remove = this.minecraft.hasShiftDown() && !entry.area().isEmpty();
-				this.send(entry.id(), "jefe", remove ? "" : this.nextArea(entry.area()), 0);
+				this.send(entry.id(), "jefe", this.nextArea(entry.area()), 0);
 				this.send("", "panel", "", 0);
-			}).bounds(bx, by, w * 3 + gap * 2, 20).build();
-			role.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(entry.area().isEmpty()
-				? "Clic: hacerlo jefe. Repartirá entre su equipo el trabajo de su área."
-				: "Clic: cambiar de área (su equipo se queda). Mayús+clic: quitarle el cargo.")));
+			}).bounds(bx, by, boss ? w * 2 + gap : w * 3 + gap * 2, 20).build();
+			role.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(boss
+				? "Cambiar de área. Su equipo se queda con él."
+				: "Hacerlo jefe. Repartirá entre su equipo el trabajo de su área.")));
 			this.addRenderableWidget(role);
+			if (boss) {
+				Button quit = Button.builder(Component.literal("Quitar"), b -> {
+					this.send(entry.id(), "jefe", "", 0);
+					this.send("", "panel", "", 0);
+				}).bounds(bx + 2 * (w + gap), by, w, 20).build();
+				quit.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+					"Quitarle el cargo. Su equipo pasa a su jefe (si tiene) o queda libre.")));
+				this.addRenderableWidget(quit);
+			}
 
 			by += 24;
 			// Equipo: ninguno -> cada jefe -> ninguno. Un jefe también puede ir en el
@@ -167,7 +176,7 @@ public class PanelScreen extends Screen {
 
 	private Component roleLabel(BecarioNetwork.PanelEntry entry) {
 		Area area = Area.of(entry.area());
-		return Component.literal("Cargo: " + (area == null ? "ninguno" : "jefe de " + area.label().toLowerCase()) + " ▸");
+		return Component.literal(area == null ? "Cargo: ninguno ▸" : "Jefe: " + area.label().toLowerCase() + " ▸");
 	}
 
 	private String nextArea(String current) {
