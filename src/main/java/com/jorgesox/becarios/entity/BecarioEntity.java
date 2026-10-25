@@ -833,9 +833,9 @@ public class BecarioEntity extends TamableAnimal {
 		// Obra.
 		int buildSize = input.getIntOr("build_size", 0);
 		if (buildSize > 0) {
-			com.jorgesox.becarios.build.BuildOrder.Kind kind = "PORTAL".equals(input.getStringOr("build_kind", "HOUSE"))
+			com.jorgesox.becarios.build.BuildOrder.Kind buildKind = "PORTAL".equals(input.getStringOr("build_kind", "HOUSE"))
 				? com.jorgesox.becarios.build.BuildOrder.Kind.PORTAL : com.jorgesox.becarios.build.BuildOrder.Kind.HOUSE;
-			this.buildOrder = new com.jorgesox.becarios.build.BuildOrder(kind,
+			this.buildOrder = new com.jorgesox.becarios.build.BuildOrder(buildKind,
 				new BlockPos(input.getIntOr("build_x", 0), input.getIntOr("build_y", 0), input.getIntOr("build_z", 0)),
 				net.minecraft.core.Direction.from2DDataValue(input.getIntOr("build_front", 0)), buildSize);
 			if (this.craftOrder != null) {
