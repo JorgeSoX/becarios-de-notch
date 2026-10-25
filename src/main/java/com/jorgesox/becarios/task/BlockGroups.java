@@ -45,6 +45,12 @@ public final class BlockGroups {
 		put("lapislazuli", any(Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE), Search.UNDERGROUND, 0);
 		put("diamante", any(Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE), Search.UNDERGROUND, -56);
 		put("esmeralda", any(Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE), Search.UNDERGROUND, 100);
+		// Para el portal al Nether: obsidiana (junto a los lagos de lava de abajo) y grava (sílex).
+		put("obsidiana", any(Blocks.OBSIDIAN), Search.UNDERGROUND, -54);
+		put("grava", any(Blocks.GRAVEL), Search.UNDERGROUND, 30);
+		// En el Nether.
+		put("cuarzo", any(Blocks.NETHER_QUARTZ_ORE), Search.UNDERGROUND, 64);
+		put("netherita", any(Blocks.ANCIENT_DEBRIS), Search.UNDERGROUND, 15);
 	}
 
 	private BlockGroups() {

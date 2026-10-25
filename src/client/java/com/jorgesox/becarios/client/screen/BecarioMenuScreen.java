@@ -21,7 +21,7 @@ import net.minecraft.network.chat.Component;
  */
 public class BecarioMenuScreen extends Screen {
 	private static final int PANEL_W = 300;
-	private static final int PANEL_H = 216;
+	private static final int PANEL_H = 244;
 	private static final int[] AMOUNTS = {8, 16, 32, 64};
 	private static final int[] RADII = {8, 16, 24, 32};
 
@@ -78,8 +78,15 @@ public class BecarioMenuScreen extends Screen {
 		y += 22;
 		this.addRenderableWidget(Button.builder(Component.literal("Minar"), b ->
 			this.send("mina", this.targets.get(targetIndex), AMOUNTS[amountIndex], true)).bounds(x, y, w, 20).build());
-		this.addRenderableWidget(Button.builder(Component.literal("Talar árboles"), b ->
-			this.send("tala", "", AMOUNTS[amountIndex], true)).bounds(x + (w + gap), y, 2 * w + gap, 20).build());
+		this.addRenderableWidget(Button.builder(Component.literal("Talar"), b ->
+			this.send("tala", "", AMOUNTS[amountIndex], true)).bounds(x + (w + gap), y, w, 20).build());
+
+		// Obras: delante de ti, mirando hacia ti. Él junta los materiales.
+		y += 28;
+		this.work("Casa peq.", "casa", 5, "Casa pequeña (5x5) delante de ti, con la puerta hacia ti.", x, y, w);
+		this.work("Casa grande", "casa", 7, "Casa grande (7x7) delante de ti, con la puerta hacia ti.", x + (w + gap), y, w);
+		this.work("Portal", "portal", 0, "Portal al Nether delante de ti. Si no tiene obsidiana, va a por ella (con pico de diamante).",
+			x + 2 * (w + gap), y, w);
 
 		// Combate: modo y radio.
 		y += 30;
@@ -108,6 +115,12 @@ public class BecarioMenuScreen extends Screen {
 			.bounds(this.left + PANEL_W - 70, this.top + 6, 60, 16).build());
 		this.addRenderableWidget(Button.builder(Component.literal("Cerrar"), b -> this.onClose())
 			.bounds(this.left + PANEL_W - 70, by, 60, 20).build());
+	}
+
+	private void work(String label, String action, int amount, String tooltip, int x, int y, int w) {
+		Button button = Button.builder(Component.literal(label), b -> this.send(action, "", amount, true)).bounds(x, y, w, 20).build();
+		button.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(tooltip)));
+		this.addRenderableWidget(button);
 	}
 
 	private void action(String label, String action, int x, int y, int w) {
@@ -163,7 +176,8 @@ public class BecarioMenuScreen extends Screen {
 		g.text(this.font, "Ahora: " + this.data.status(), x, this.top + 37, GuiStyle.TEXT, false);
 		g.text(this.font, this.font.plainSubstrByWidth("Dónde: " + this.data.where(), 196), x, this.top + 48, 0xFF505050, false);
 		g.text(this.font, "Trabajo", x, this.top + 105, 0xFF707070, false);
-		g.text(this.font, "Combate", x, this.top + 157, 0xFF707070, false);
+		g.text(this.font, "Obras", x, this.top + 157, 0xFF707070, false);
+		g.text(this.font, "Combate", x, this.top + 185, 0xFF707070, false);
 		g.text(this.font, "Darle algo:", this.left + 10, this.top + 134, 0xFF707070, false);
 		g.text(this.font, "Mayús+clic", this.left + 10, this.top + 144, 0xFF707070, false);
 	}

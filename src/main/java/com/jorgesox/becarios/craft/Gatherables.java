@@ -57,6 +57,19 @@ public final class Gatherables {
 		if (item == Items.EMERALD) {
 			return new Source("esmeralda", 1, Blocks.EMERALD_ORE.defaultBlockState());
 		}
+		if (item == Items.OBSIDIAN) {
+			return new Source("obsidiana", 1, Blocks.OBSIDIAN.defaultBlockState());
+		}
+		if (item == Items.FLINT) {
+			// Sale de la grava de vez en cuando: se pica grava hasta que salga (ver CraftGoal).
+			return new Source("grava", 1, null);
+		}
+		if (item == Items.QUARTZ) {
+			return new Source("cuarzo", 1, Blocks.NETHER_QUARTZ_ORE.defaultBlockState());
+		}
+		if (item == Items.ANCIENT_DEBRIS) {
+			return new Source("netherita", 1, Blocks.ANCIENT_DEBRIS.defaultBlockState());
+		}
 		if (item == Items.SAND) {
 			return new Source("arena", 1, null);
 		}

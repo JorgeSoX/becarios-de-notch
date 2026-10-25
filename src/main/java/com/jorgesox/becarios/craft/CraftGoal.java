@@ -167,7 +167,9 @@ public class CraftGoal extends Goal {
 					}
 				}
 				CraftPlanner.Gather gather = new CraftPlanner.Gather(first.group(), blocks, first.item());
-				BecarioTask task = BecarioTask.mine(group.label(), group.test(), gather.blocks());
+				// El sílex sale de la grava solo a veces: hasta 10 bloques por cada uno (para en cuanto lo tiene).
+				int blocksToMine = gather.blocks() * (gather.item() == Items.FLINT ? 10 : 1);
+				BecarioTask task = BecarioTask.mine(group.label(), group.test(), blocksToMine);
 				task.forCraft = true;
 				java.util.function.Predicate<ItemStack> counts = gatherCounter(gather.item());
 				task.gatherItems = counts;

@@ -32,6 +32,8 @@ public final class CraftOrder {
 	public @Nullable BlockPos activeFurnace;
 	/** Pasos seguidos que no han avanzado nada (para no quedarse en bucle). */
 	public int failures;
+	/** Es para una obra: al terminar, sigue construyendo (no "vuelve contigo"). */
+	public boolean forBuild;
 
 	public CraftOrder(Item item, int total, int asked) {
 		this.item = item;

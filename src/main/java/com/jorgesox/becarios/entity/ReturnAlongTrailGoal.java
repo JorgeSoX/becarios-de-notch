@@ -9,7 +9,8 @@ import net.minecraft.world.entity.ai.goal.Goal;
 
 /**
  * Al terminar un trabajo lejos (túneles, exploración), vuelve por el mismo
- * camino que hizo, paso a paso, hasta que puede ir directo hacia el dueño.
+ * camino que hizo, paso a paso, hasta que puede ir directo hacia el dueño
+ * (o hacia su obra, si está construyendo algo).
  * Es lo que haría un jugador: deshacer el camino en vez de quedarse atascado.
  */
 public class ReturnAlongTrailGoal extends Goal {
@@ -27,9 +28,17 @@ public class ReturnAlongTrailGoal extends Goal {
 	@Override
 	public boolean canUse() {
 		LivingEntity owner = becario.getOwner();
-		if (becario.getTask() != null || becario.getTrail().isEmpty() || owner == null
+		if (becario.getTask() != null || becario.getCraftOrder() != null || becario.getTrail().isEmpty() || owner == null
 			|| becario.isOrderedToSit() || becario.getCombatMode() == CombatMode.GUARDIA) {
 			return false;
+		}
+		// Destino: su obra si está construyendo; si no, tú.
+		if (becario.getBuildOrder() != null) {
+			if (becario.blockPosition().distSqr(becario.getBuildOrder().center) < OWNER_CLOSE_SQ) {
+				becario.clearTrail(); // ya está en la obra
+				return false;
+			}
+			return true;
 		}
 		if (owner.level() != becario.level() || becario.distanceToSqr(owner) < OWNER_CLOSE_SQ) {
 			becario.clearTrail(); // ya está con el dueño

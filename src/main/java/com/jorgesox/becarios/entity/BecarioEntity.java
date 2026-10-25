@@ -97,6 +97,8 @@ public class BecarioEntity extends TamableAnimal {
 	private @Nullable BecarioTask task;
 	/** Encargo de fabricación en curso (CraftGoal); mientras, `task` puede ser la recogida de materia prima. */
 	private com.jorgesox.becarios.craft.@Nullable CraftOrder craftOrder;
+	/** Obra en curso (BuildGoal): mientras, `task`/`craftOrder` pueden ser para conseguir material. */
+	private com.jorgesox.becarios.build.@Nullable BuildOrder buildOrder;
 
 	public BecarioEntity(EntityType<? extends BecarioEntity> type, Level level) {
 		super(type, level);
@@ -159,14 +161,17 @@ public class BecarioEntity extends TamableAnimal {
 		this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.25, true));
 		this.goalSelector.addGoal(2, new SitWhenOrderedToGoal(this));
 		this.goalSelector.addGoal(2, new OpenDoorGoal(this, true));
+		this.goalSelector.addGoal(2, new PickUpMaterialsGoal(this));
 		this.goalSelector.addGoal(3, new BlockMiningGoal(this));
 		this.goalSelector.addGoal(3, new ExpeditionGoal(this));
+		this.goalSelector.addGoal(3, new com.jorgesox.becarios.build.BuildGoal(this));
 		this.goalSelector.addGoal(3, new CollectItemsGoal(this));
 		this.goalSelector.addGoal(3, new com.jorgesox.becarios.craft.CraftGoal(this));
 		this.goalSelector.addGoal(3, new FetchThrownItemsGoal(this));
 		this.goalSelector.addGoal(4, new ReturnToPostGoal(this));
 		this.goalSelector.addGoal(4, new ReturnAlongTrailGoal(this));
 		this.goalSelector.addGoal(4, new BecarioFollowOwnerGoal(this));
+		this.goalSelector.addGoal(4, new FollowThroughPortalGoal(this));
 		this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, Player.class, 8.0F));
 		this.goalSelector.addGoal(6, new RandomLookAroundGoal(this));
 
@@ -306,8 +311,9 @@ public class BecarioEntity extends TamableAnimal {
 
 	/** Empieza una orden de trabajo; si estaba "quieto", se levanta. Una orden nueva del dueño anula el encargo. */
 	public void startTask(BecarioTask newTask) {
-		if (!newTask.forCraft) {
+		if (!newTask.forCraft && !newTask.forBuild) {
 			this.craftOrder = null;
+			this.buildOrder = null;
 		}
 		this.task = newTask;
 		this.setOrderedToSit(false);
@@ -317,6 +323,7 @@ public class BecarioEntity extends TamableAnimal {
 	public void cancelTask() {
 		this.task = null;
 		this.craftOrder = null;
+		this.buildOrder = null;
 		this.getNavigation().stop();
 	}
 
@@ -332,6 +339,10 @@ public class BecarioEntity extends TamableAnimal {
 			this.tell("ya tengo " + finished.done + " de " + finished.label + ". Sigo con el encargo.");
 			return;
 		}
+		if (finished != null && finished.forBuild && this.buildOrder != null) {
+			this.tell("ya tengo " + finished.label + ". Sigo con la casa.");
+			return;
+		}
 		this.tell(message);
 	}
 
@@ -339,6 +350,7 @@ public class BecarioEntity extends TamableAnimal {
 	public void failTask(String message) {
 		this.task = null;
 		this.craftOrder = null;
+		this.buildOrder = null;
 		this.getNavigation().stop();
 		this.tell(message);
 	}
@@ -391,8 +403,17 @@ public class BecarioEntity extends TamableAnimal {
 	/** Nuevo encargo: tener `amount` más de ese objeto. */
 	public void startCraft(net.minecraft.world.item.Item item, int amount) {
 		this.task = null;
+		this.buildOrder = null;
 		this.craftOrder = new com.jorgesox.becarios.craft.CraftOrder(item, this.countItem(item) + amount, amount);
 		this.setOrderedToSit(false);
+		this.getNavigation().stop();
+	}
+
+	/** Encargo de fabricación para una obra (no anula la obra). */
+	public void startCraftForBuild(net.minecraft.world.item.Item item, int amount) {
+		this.task = null;
+		this.craftOrder = new com.jorgesox.becarios.craft.CraftOrder(item, this.countItem(item) + amount, amount);
+		this.craftOrder.forBuild = true;
 		this.getNavigation().stop();
 	}
 
@@ -404,6 +425,10 @@ public class BecarioEntity extends TamableAnimal {
 			return;
 		}
 		Component itemName = new ItemStack(order.item).getHoverName();
+		if (order.forBuild && this.buildOrder != null && order.resume == null) {
+			this.tell(Component.literal("ya tengo " + order.asked + "x ").append(itemName).append(". Sigo con la casa."));
+			return;
+		}
 		if (order.resume != null) {
 			this.task = order.resume;
 			this.tell(Component.literal("ya tengo ").append(itemName).append(". Sigo con " + order.resume.label + "."));
@@ -414,7 +439,43 @@ public class BecarioEntity extends TamableAnimal {
 
 	public void failCraft(Component message) {
 		this.craftOrder = null;
+		this.buildOrder = null;
 		this.task = null;
+		this.getNavigation().stop();
+		this.tell(message);
+	}
+
+	// ----------------------------------------------------------------- obras
+
+	public com.jorgesox.becarios.build.@Nullable BuildOrder getBuildOrder() {
+		return this.buildOrder;
+	}
+
+	/** Nueva obra: una casa de lado `size` (5 o 7) con la fachada mirando a `front`. */
+	public void startBuild(BlockPos center, net.minecraft.core.Direction front, int size) {
+		this.startBuild(com.jorgesox.becarios.build.BuildOrder.Kind.HOUSE, center, front, size);
+	}
+
+	public void startBuild(com.jorgesox.becarios.build.BuildOrder.Kind kind, BlockPos center, net.minecraft.core.Direction front, int size) {
+		this.task = null;
+		this.craftOrder = null;
+		this.buildOrder = new com.jorgesox.becarios.build.BuildOrder(kind, center, front, size);
+		this.setOrderedToSit(false);
+		this.getNavigation().stop();
+	}
+
+	public void completeBuild() {
+		boolean portal = this.buildOrder != null && this.buildOrder.kind == com.jorgesox.becarios.build.BuildOrder.Kind.PORTAL;
+		this.buildOrder = null;
+		this.setWorkFacing(null);
+		this.tell(portal ? "¡portal encendido! Cuando pases, voy detrás de ti." : "¡casa terminada! Pasa, que tiene puerta.");
+	}
+
+	public void failBuild(String message) {
+		this.buildOrder = null;
+		this.task = null;
+		this.craftOrder = null;
+		this.setWorkFacing(null);
 		this.getNavigation().stop();
 		this.tell(message);
 	}
@@ -671,6 +732,10 @@ public class BecarioEntity extends TamableAnimal {
 		}
 		output.store("inventory", ItemStack.OPTIONAL_CODEC.listOf(), items);
 
+		// El rastro (para volver por donde vino) sobrevive a los reinicios.
+		if (!this.trail.isEmpty()) {
+			output.store("trail", BlockPos.CODEC.listOf(), new ArrayList<>(this.trail));
+		}
 		output.putString("combat_mode", this.combatMode.name());
 		output.putInt("guard_radius", this.guardRadius);
 		if (this.guardPos != null) {
@@ -690,7 +755,17 @@ public class BecarioEntity extends TamableAnimal {
 				output.putInt("craft_resume_done", this.craftOrder.resume.done);
 			}
 		}
+		if (this.buildOrder != null) {
+			output.putInt("build_x", this.buildOrder.center.getX());
+			output.putInt("build_y", this.buildOrder.center.getY());
+			output.putInt("build_z", this.buildOrder.center.getZ());
+			output.putInt("build_front", this.buildOrder.front.get2DDataValue());
+			output.putInt("build_size", this.buildOrder.size);
+			output.putString("build_kind", this.buildOrder.kind.name());
+			output.putBoolean("craft_for_build", this.craftOrder != null && this.craftOrder.forBuild);
+		}
 		if (this.task != null) {
+			output.putBoolean("task_for_build", this.task.forBuild);
 			output.putBoolean("task_for_craft", this.task.forCraft);
 			output.putString("task_kind", this.task.kind.name());
 			output.putString("task_label", this.task.label);
@@ -710,6 +785,10 @@ public class BecarioEntity extends TamableAnimal {
 			}
 		});
 
+		input.read("trail", BlockPos.CODEC.listOf()).ifPresent(list -> {
+			this.trail.clear();
+			this.trail.addAll(list);
+		});
 		try {
 			this.combatMode = CombatMode.valueOf(input.getStringOr("combat_mode", CombatMode.DEFENSA.name()));
 		} catch (IllegalArgumentException e) {
@@ -731,6 +810,7 @@ public class BecarioEntity extends TamableAnimal {
 				this.task = BecarioTask.mine(group.label(), group.test(), input.getIntOr("task_target", 1));
 				this.task.done = input.getIntOr("task_done", 0);
 				this.task.forCraft = input.getBooleanOr("task_for_craft", false);
+				this.task.forBuild = input.getBooleanOr("task_for_build", false);
 			}
 		}
 
@@ -748,6 +828,21 @@ public class BecarioEntity extends TamableAnimal {
 			}
 		} else if (this.task != null && this.task.forCraft) {
 			this.task.forCraft = false;
+		}
+
+		// Obra.
+		int buildSize = input.getIntOr("build_size", 0);
+		if (buildSize > 0) {
+			com.jorgesox.becarios.build.BuildOrder.Kind kind = "PORTAL".equals(input.getStringOr("build_kind", "HOUSE"))
+				? com.jorgesox.becarios.build.BuildOrder.Kind.PORTAL : com.jorgesox.becarios.build.BuildOrder.Kind.HOUSE;
+			this.buildOrder = new com.jorgesox.becarios.build.BuildOrder(kind,
+				new BlockPos(input.getIntOr("build_x", 0), input.getIntOr("build_y", 0), input.getIntOr("build_z", 0)),
+				net.minecraft.core.Direction.from2DDataValue(input.getIntOr("build_front", 0)), buildSize);
+			if (this.craftOrder != null) {
+				this.craftOrder.forBuild = input.getBooleanOr("craft_for_build", false);
+			}
+		} else if (this.task != null) {
+			this.task.forBuild = false;
 		}
 	}
 
@@ -1021,7 +1116,7 @@ public class BecarioEntity extends TamableAnimal {
 		}
 		// Trabajando lejos (o volviendo): mantener cargada su zona, igual que un
 		// jugador carga los chunks a su alrededor. Si no, se "congelaría" al alejarse.
-		if (this.tickCount % 20 == 0 && (this.task != null || this.craftOrder != null || !this.trail.isEmpty())) {
+		if (this.tickCount % 20 == 0 && (this.task != null || this.craftOrder != null || this.buildOrder != null || !this.trail.isEmpty())) {
 			level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
 				net.minecraft.world.level.ChunkPos.containing(this.blockPosition()), 2);
 		}
@@ -1077,6 +1172,16 @@ public class BecarioEntity extends TamableAnimal {
 	@Override
 	public boolean isFood(ItemStack itemStack) {
 		return false;
+	}
+
+	/**
+	 * Solo cruza portales para seguirte (cuando tú ya estás en la otra dimensión):
+	 * así no se cuela por uno mientras trabaja o pasea al lado.
+	 */
+	@Override
+	public boolean canUsePortal(boolean ignorePassenger) {
+		LivingEntity owner = this.getOwner();
+		return super.canUsePortal(ignorePassenger) && owner != null && owner.level() != this.level();
 	}
 
 	/** El becario no se reproduce. */

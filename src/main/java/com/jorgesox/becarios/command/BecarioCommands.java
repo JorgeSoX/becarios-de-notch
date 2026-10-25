@@ -55,7 +55,7 @@ public final class BecarioCommands {
 	private static final int MAX_NAME_LENGTH = 32;
 	/** Acciones que necesitan al becario cargado (las demás tocan solo la plantilla). */
 	private static final java.util.Set<String> NEEDS_PRESENT = java.util.Set.of(
-		"sigue", "quieto", "ven", "para", "recoge", "dame", "brujula", "tala", "mina", "inventario", "modo");
+		"sigue", "quieto", "ven", "para", "recoge", "dame", "brujula", "tala", "mina", "inventario", "modo", "casa", "portal");
 	private static final String NO_BECARIO = "No tienes ningún becario cerca. Pulsa B (o usa una Oficina) para contratar o elegir uno.";
 
 	private BecarioCommands() {
@@ -115,6 +115,11 @@ public final class BecarioCommands {
 						.then(Commands.argument("cantidad", IntegerArgumentType.integer(1, 256))
 							.executes(ctx -> craft(ctx.getSource(), ItemArgument.getItem(ctx, "objeto").item().value(),
 								IntegerArgumentType.getInteger(ctx, "cantidad"))))))
+				.then(Commands.literal("construye")
+					.executes(ctx -> build(ctx.getSource(), 5))
+					.then(Commands.literal("pequena").executes(ctx -> build(ctx.getSource(), 5)))
+					.then(Commands.literal("grande").executes(ctx -> build(ctx.getSource(), 7)))
+					.then(Commands.literal("portal").executes(ctx -> buildPortal(ctx.getSource()))))
 				.then(Commands.literal("recoge").executes(ctx -> collect(ctx.getSource())))
 				.then(Commands.literal("para").executes(ctx -> stopTask(ctx.getSource())))
 				.then(Commands.literal("dame").executes(ctx -> giveAll(ctx.getSource())))
@@ -466,6 +471,40 @@ public final class BecarioCommands {
 		return 1;
 	}
 
+	/**
+	 * /becario construye [pequena|grande]: una casa justo delante de ti, con la
+	 * puerta mirándote. Junta él los materiales (piedra, madera, puerta, antorcha).
+	 */
+	private static int build(CommandSourceStack source, int size) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		ServerPlayer player = source.getPlayerOrException();
+		net.minecraft.core.Direction facing = player.getDirection();
+		net.minecraft.core.BlockPos center = player.blockPosition().relative(facing, size / 2 + 2);
+		becario.startBuild(center, facing.getOpposite(), size);
+		source.sendSuccess(() -> Component.literal(becario.getName().getString() + ": voy a construir una casa "
+			+ (size == 7 ? "grande (7x7)" : "pequeña (5x5)") + " aquí delante, con la puerta hacia ti. Primero junto los materiales."), false);
+		return 1;
+	}
+
+	/** /becario construye portal: un portal al Nether delante de ti (consigue obsidiana y mechero si no los tiene). */
+	private static int buildPortal(CommandSourceStack source) throws CommandSyntaxException {
+		BecarioEntity becario = requireBecario(source);
+		if (becario == null) {
+			return 0;
+		}
+		ServerPlayer player = source.getPlayerOrException();
+		net.minecraft.core.Direction facing = player.getDirection();
+		// El hueco queda 3 bloques delante de ti, centrado.
+		net.minecraft.core.BlockPos base = player.blockPosition().relative(facing, 3).relative(facing.getCounterClockWise(), 0);
+		becario.startBuild(com.jorgesox.becarios.build.BuildOrder.Kind.PORTAL, base, facing.getOpposite(), 0);
+		source.sendSuccess(() -> Component.literal(becario.getName().getString()
+			+ ": voy a hacer un portal al Nether aquí delante. Si no tengo obsidiana, voy a por ella (necesito pico de diamante)."), false);
+		return 1;
+	}
+
 	private static int collect(CommandSourceStack source) throws CommandSyntaxException {
 		BecarioEntity becario = requireBecario(source);
 		if (becario == null) {
@@ -538,6 +577,9 @@ public final class BecarioCommands {
 		}
 		if (order != null) {
 			return order.describe();
+		}
+		if (becario.getBuildOrder() != null) {
+			return becario.getBuildOrder().describe();
 		}
 		if (becario.getCombatMode() == CombatMode.GUARDIA) {
 			return "de guardia";
@@ -641,6 +683,8 @@ public final class BecarioCommands {
 				case "ven" -> come(source);
 				case "para" -> stopTask(source);
 				case "recoge" -> collect(source);
+				case "casa" -> build(source, amount == 7 ? 7 : 5);
+				case "portal" -> buildPortal(source);
 				case "dame" -> giveAll(source);
 				case "brujula" -> giveCompass(source);
 				case "tala" -> mine(source, "madera", clamped);

@@ -31,6 +31,8 @@ public final class BecarioTask {
 	public int searchTicks;
 	/** Es una parte de un encargo de fabricación (conseguir materia prima): al acabar, sigue con él. */
 	public boolean forCraft;
+	/** Es material para una obra (casa): al acabar, sigue construyendo. */
+	public boolean forBuild;
 	/** Para un encargo: basta con llevar encima `gatherUntil` objetos que cumplan esto (aunque salgan al cavar el camino). */
 	public @Nullable Predicate<ItemStack> gatherItems;
 	public int gatherUntil;
