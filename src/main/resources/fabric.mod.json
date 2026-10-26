@@ -3,13 +3,13 @@
 	"id": "becarios-de-notch",
 	"version": "${version}",
 	"name": "Becarios de Notch",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Contrata becarios que minan, talan, fabrican, construyen, te defienden y te siguen (también por portales).",
 	"authors": [
-		"Me!"
+		"JorgeSoX"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/JorgeSoX/becarios-de-notch",
+		"sources": "https://github.com/JorgeSoX/becarios-de-notch"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/becarios-de-notch/icon.png",
