@@ -86,8 +86,8 @@ Alternativa a la tecla B: fabrica una **Oficina** y colócala en tu base. Con **
 | 4 | 40 |
 | 5 | 80 |
 
-- **Creativo:** contratar es gratis.
-- Si **despides** a uno, su puesto queda libre, pero el siguiente que contrates vuelve a costar lo que cuesta ese puesto.
+- **El primero también cuesta 5 esmeraldas.** Solo es gratis si estás en **creativo** (por eso, si pruebas el mod en creativo, no te cobra nada).
+- Si **despides** a uno o **muere**, su puesto queda libre, pero el siguiente que contrates **vuelve a costar** lo que cuesta ese puesto (con un solo becario, 5 esmeraldas; con dos, 10, etc.).
 - Dos becarios tuyos no pueden llamarse igual. El nombre tiene un máximo de caracteres.
 
 ---
