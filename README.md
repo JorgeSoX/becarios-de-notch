@@ -54,7 +54,7 @@ Mod de **Fabric** para **Minecraft Java 26.3** que añade compañeros de trabajo
 
 ## Primeros pasos
 
-1. Pulsa **B** para abrir el panel de becarios (la tecla se puede cambiar en *Opciones → Controles*).
+1. Pulsa **B** para abrir el panel de becarios. Si no se abre, mira el aviso de [conflicto de teclas](#la-tecla-b-no-abre-el-panel-conflicto-con-otro-mod) más abajo.
 2. Pulsa **Contratar**, elige un **nombre** y un **aspecto** (hay unas 30 skins).
 3. Paga las esmeraldas (el primero cuesta 5; en creativo es gratis).
 4. Haz **clic derecho sobre el becario** para abrir su menú y darle órdenes.
@@ -266,6 +266,16 @@ Todo se puede hacer con las pantallas, pero existen comandos `/becario …` (út
 ---
 
 ## Preguntas frecuentes
+
+### La tecla B no abre el panel (conflicto con otro mod)
+
+Si en tu instancia hay otro mod que también usa la **B** (por ejemplo, uno de bestiario o de datos de mobs), se pelean por la tecla y puede abrirse el otro en lugar del panel de becarios. Se arregla cambiando la tecla, sin tocar ningún mod:
+
+1. Entra en *Opciones → Controles → **Teclas…***
+2. Busca la categoría **Becarios de Notch** (o escribe "becario" en el buscador).
+3. Pulsa el botón de **Panel de becarios** y presiona la tecla que quieras (una que no uses para nada más; las que están en conflicto se marcan en rojo).
+
+Mientras tanto, puedes abrir el mismo panel con **clic derecho sobre una Oficina**.
 
 **¿Un becario puede teletransportarse hasta mí?**
 No. Siempre viene andando. Si no encuentra camino, te avisa.
