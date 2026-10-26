@@ -150,7 +150,7 @@ Clic derecho sobre un becario (o **Órdenes…** en el panel):
 
 Con **Minar…** eliges **qué** y **cuánto** (de 1 a 64).
 
-| | Materiales disponibles |
+| Zona | Materiales disponibles |
 |---|---|
 | 🌍 **Superficie** | madera · tierra · arena |
 | ⛏️ **Subsuelo** | piedra · carbón · hierro · cobre · oro · redstone · lapislázuli · diamante · esmeralda |
