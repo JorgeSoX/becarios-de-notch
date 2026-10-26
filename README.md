@@ -1,14 +1,37 @@
+<div align="center">
+
+<img src="src/main/resources/assets/becarios-de-notch/icon.png" alt="Becarios de Notch" width="128" height="128">
+
 # Becarios de Notch
 
-Mod de **Fabric** para **Minecraft Java 26.3** que añade compañeros de trabajo: los **becarios**. Los contratas con esmeraldas y trabajan para ti: minan, talan, fabrican objetos, construyen casas y portales, te defienden y te siguen a donde vayas, incluso a través de portales. Todo se maneja con un panel y menús en pantalla; no hace falta escribir comandos.
+**Contrata becarios que trabajan para ti en Minecraft.**
+Minan, talan, fabrican, construyen, te defienden y te siguen, hasta por portales.
 
-- Cada jugador tiene **sus propios becarios** (hasta 5) y solo él puede darles órdenes.
-- Los becarios **no se teletransportan nunca**: van andando, y si no encuentran camino te lo dicen.
-- Funciona en **singleplayer y en servidores** (hay que instalarlo en los dos lados).
+![Minecraft](https://img.shields.io/badge/Minecraft-26.3-62B47A?style=for-the-badge&logo=minecraft&logoColor=white)
+![Fabric](https://img.shields.io/badge/Fabric-0.19.5%2B-DBD0B4?style=for-the-badge)
+![Java](https://img.shields.io/badge/Java-25-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
+![Licencia](https://img.shields.io/badge/Licencia-CC0-lightgrey?style=for-the-badge)
+
+[Instalación](#instalación) · [Primeros pasos](#primeros-pasos) · [Precios](#contratar-becarios-y-precios) · [Preguntas frecuentes](#preguntas-frecuentes)
+
+</div>
 
 ---
 
-## Índice
+Mod de **Fabric** para **Minecraft Java 26.3**. Contratas becarios con esmeraldas y les das órdenes con un panel y menús en pantalla, sin escribir comandos.
+
+| ⛏️ **Minan** | 🌲 **Talan** | 🔨 **Fabrican** |
+|---|---|---|
+| Hasta 16 materiales. Si no hay cerca, salen de expedición. | Árboles enteros, en la cantidad que pidas. | Unos 50 objetos. Consiguen ellos los materiales. |
+| 🏠 **Construyen** | ⚔️ **Te defienden** | 🌀 **Te siguen** |
+| Casas y portales al Nether. | Cuatro modos de combate. Se cubren con escudo. | Andando, nunca teletransportados, incluso por portales. |
+
+- 👤 Cada jugador tiene **sus propios becarios** (hasta 5) y solo él puede darles órdenes.
+- 🌐 Funciona en **un jugador y en servidores** (hay que instalarlo en los dos lados).
+- 👥 Se organizan en **equipos con jefes**: un jefe reparte el trabajo entre su equipo.
+
+<details>
+<summary><b>📑 Índice completo</b></summary>
 
 1. [Instalación](#instalación)
 2. [Primeros pasos](#primeros-pasos)
@@ -28,65 +51,63 @@ Mod de **Fabric** para **Minecraft Java 26.3** que añade compañeros de trabajo
 16. [Desarrollo y compilación](#desarrollo-y-compilación)
 17. [Licencia](#licencia)
 
+</details>
+
 ---
 
 ## Instalación
 
-**Requisitos**
-
-| Qué | Versión |
+| Requisito | Versión |
 |---|---|
-| Minecraft Java | 26.3 |
-| Fabric Loader | 0.19.5 o superior |
-| Fabric API | 0.163.0+26.3 |
-| Java | 25 |
+| 🎮 Minecraft Java | **26.3** |
+| 🧵 Fabric Loader | **0.19.5** o superior |
+| 📦 Fabric API | **0.163.0+26.3** |
+| ☕ Java | **25** |
 
-**Pasos**
-
-1. Descarga `becarios-de-notch-<versión>.jar` (apartado *Releases* del repositorio, o compílalo tú: ver [Desarrollo](#desarrollo-y-compilación)).
+1. Descarga `becarios-de-notch-<versión>.jar` (apartado **Releases** del repositorio, o compílalo tú: ver [Desarrollo](#desarrollo-y-compilación)).
 2. Cópialo a la carpeta `mods` de tu instancia de Minecraft.
-3. **Si juegas en un servidor**, ponlo también en la carpeta `mods` del servidor. Servidor y jugadores deben tener **la misma versión del jar**: el mod añade un bloque, una criatura y pantallas propias, y con versiones distintas no se podrá entrar.
+3. Si juegas en un **servidor**, ponlo también en la carpeta `mods` del servidor.
 4. Arranca. En el log del servidor debe aparecer `Becarios de Notch cargado.`
 
-> Antes de añadir el mod a un mundo con partida seria, haz una copia de seguridad del mundo.
+> [!IMPORTANT]
+> Servidor y jugadores deben tener **exactamente el mismo jar**. El mod añade un bloque, una criatura y pantallas propias, y con versiones distintas no se puede entrar.
+
+> [!TIP]
+> Antes de añadir el mod a un mundo con una partida seria, haz una copia de seguridad del mundo.
 
 ---
 
 ## Primeros pasos
 
-1. Pulsa **B** para abrir el panel de becarios. Si no se abre, mira el aviso de [conflicto de teclas](#la-tecla-b-no-abre-el-panel-conflicto-con-otro-mod) más abajo.
+1. Pulsa **B** para abrir el panel de becarios. Si no se abre, mira el aviso de [conflicto de teclas](#la-tecla-b-no-abre-el-panel-conflicto-con-otro-mod).
 2. Pulsa **Contratar**, elige un **nombre** y un **aspecto** (hay unas 30 skins).
 3. Paga las esmeraldas (el primero cuesta 5; en creativo es gratis).
 4. Haz **clic derecho sobre el becario** para abrir su menú y darle órdenes.
 
-Alternativa a la tecla B: fabrica una **Oficina** y colócala en tu base. Con **clic derecho** sobre ella se abre el mismo panel.
+> [!NOTE]
+> Alternativa a la tecla B: fabrica una **Oficina** y colócala en tu base. Con **clic derecho** sobre ella se abre el mismo panel.
 
-**Receta de la Oficina**
+### Receta de la Oficina
 
-| | | |
-|---|---|---|
-| Libro | Esmeralda | Libro |
-| Tablas | Mesa de trabajo | Tablas |
-| Tablas | Tablas | Tablas |
+```text
+  📖   🟢   📖
+  🟫   🧰   🟫
+  🟫   🟫   🟫
+```
 
-(Cualquier tipo de tablas vale.)
+📖 Libro · 🟢 Esmeralda · 🟫 Tablas (de cualquier madera) · 🧰 Mesa de trabajo
 
 ---
 
 ## Contratar becarios y precios
 
-- Puedes tener **hasta 5 becarios** a la vez.
-- El precio sube con cada puesto y se paga en **esmeraldas** del inventario:
+Puedes tener **hasta 5 becarios** a la vez. El precio sube con cada puesto y se paga en **esmeraldas** del inventario:
 
-| Becario n.º | Coste |
-|---|---|
-| 1 | 5 |
-| 2 | 10 |
-| 3 | 20 |
-| 4 | 40 |
-| 5 | 80 |
+| Becario n.º | 1 | 2 | 3 | 4 | 5 |
+|---|:-:|:-:|:-:|:-:|:-:|
+| **Coste** | 🟢 5 | 🟢 10 | 🟢 20 | 🟢 40 | 🟢 80 |
 
-- **El primero también cuesta 5 esmeraldas.** Solo es gratis si estás en **creativo** (por eso, si pruebas el mod en creativo, no te cobra nada).
+- **El primero también cuesta 5 esmeraldas.** Solo es gratis en **creativo** (por eso, si pruebas el mod en creativo, no te cobra nada).
 - Si **despides** a uno o **muere**, su puesto queda libre, pero el siguiente que contrates **vuelve a costar** lo que cuesta ese puesto (con un solo becario, 5 esmeraldas; con dos, 10, etc.).
 - Dos becarios tuyos no pueden llamarse igual. El nombre tiene un máximo de caracteres.
 
@@ -96,12 +117,12 @@ Alternativa a la tecla B: fabrica una **Oficina** y colócala en tu base. Con **
 
 Es el centro de control. Desde aquí puedes:
 
-- Ver **toda tu plantilla** (hasta 5) con el estado de cada becario.
-- **Contratar** a uno nuevo.
-- Abrir las **órdenes** de uno concreto (**Órdenes…**), o **despedirlo**.
-- Pedir una **brújula** que apunta siempre a ese becario.
-- Nombrar **jefes** de un área y organizar sus **equipos** (ver [Jefes y equipos](#jefes-y-equipos)).
-- Aceptar o rechazar las peticiones de contratación que te hagan los jefes.
+- 📋 Ver **toda tu plantilla** (hasta 5) con el estado de cada becario.
+- ➕ **Contratar** a uno nuevo.
+- 🗣️ Abrir las **órdenes** de uno concreto (**Órdenes…**), o **despedirlo**.
+- 🧭 Pedir una **brújula** que apunta siempre a ese becario.
+- 👔 Nombrar **jefes** de un área y organizar sus **equipos** (ver [Jefes y equipos](#jefes-y-equipos)).
+- ✅ Aceptar o rechazar las peticiones de contratación que te hagan los jefes.
 
 ---
 
@@ -111,31 +132,35 @@ Clic derecho sobre un becario (o **Órdenes…** en el panel):
 
 | Botón | Qué hace |
 |---|---|
-| **Sígueme** | Te sigue a todas partes. |
-| **Quieto** | Se queda donde está. |
-| **Ven aquí** | Viene corriendo hasta ti. |
-| **Parar** | Cancela el trabajo que esté haciendo. |
-| **Recoger** | Recoge los objetos que haya por el suelo cerca. |
-| **Dame todo** | Te entrega todo lo que lleva encima. |
-| **Minar…** | Elige material y cantidad. |
-| **Talar** | Tala árboles. |
-| **Fabricar…** | Cuadrícula de objetos para fabricar. |
-| **Construir** | Casa pequeña, casa grande o portal al Nether. |
-| **Combate** | Pasivo, Defensa, Escolta o Guardia. |
+| 🚶 **Sígueme** | Te sigue a todas partes. |
+| ✋ **Quieto** | Se queda donde está. |
+| 🏃 **Ven aquí** | Viene corriendo hasta ti. |
+| 🛑 **Parar** | Cancela el trabajo que esté haciendo. |
+| 🧺 **Recoger** | Recoge los objetos que haya por el suelo cerca. |
+| 🎁 **Dame todo** | Te entrega todo lo que lleva encima. |
+| ⛏️ **Minar…** | Elige material y cantidad. |
+| 🪓 **Talar** | Tala árboles. |
+| 🔨 **Fabricar…** | Cuadrícula de objetos para fabricar. |
+| 🏠 **Construir** | Casa pequeña, casa grande o portal al Nether. |
+| ⚔️ **Combate** | Pasivo, Defensa, Escolta o Guardia. |
 
 ---
 
 ## Minar y talar
 
-Con **Minar…** eliges **qué** y **cuánto** (1 a 64). Materiales disponibles:
+Con **Minar…** eliges **qué** y **cuánto** (de 1 a 64).
 
-> madera · piedra · tierra · arena · carbón · hierro · cobre · oro · redstone · lapislázuli · diamante · esmeralda · obsidiana · grava · cuarzo · netherita
+| | Materiales disponibles |
+|---|---|
+| 🌍 **Superficie** | madera · tierra · arena |
+| ⛏️ **Subsuelo** | piedra · carbón · hierro · cobre · oro · redstone · lapislázuli · diamante · esmeralda |
+| 🌋 **Especiales** | obsidiana · grava · cuarzo · netherita |
 
 Cómo trabaja:
 
 - Busca el material cerca. Si **no lo hay a la vista**, sale de **expedición**: baja por escaleras que él mismo excava, abre túneles, **pone antorchas** para iluminarlos y **vuelve por su rastro** cuando termina.
-- Cada material tiene su **altura típica** (por ejemplo, diamante y redstone abajo del todo; hierro y cobre más arriba) y el becario baja hasta la zona adecuada.
-- Va **guardando lo que consigue** en su inventario, y cuando termina te avisa. Pídele **Dame todo** para recibirlo.
+- Cada material tiene su **altura típica** (diamante y redstone abajo del todo, hierro y cobre más arriba) y el becario baja hasta la zona adecuada.
+- Va **guardando lo que consigue** y, cuando termina, te avisa. Pídele **Dame todo** para recibirlo.
 - **Talar** funciona igual con árboles.
 - Pica más rápido si lleva una herramienta adecuada; sin ella, pica a mano (más lento).
 
@@ -143,19 +168,20 @@ Cómo trabaja:
 
 ## Fabricar
 
-**Fabricar…** abre una cuadrícula con unos 50 objetos (mesa de trabajo, horno, cofre, antorchas, escaleras, puertas, herramientas de madera/piedra/hierro/diamante, armaduras de hierro y diamante, escudo, cubo, mechero, carriles, vagoneta, etc.).
+**Fabricar…** abre una cuadrícula con unos 50 objetos: mesa de trabajo, horno, cofre, antorchas, escaleras, puertas, herramientas de madera, piedra, hierro y diamante, armaduras de hierro y diamante, escudo, cubo, mechero, carriles, vagoneta…
 
 1. Elige la **cantidad** (el botón rota entre 1, 2, 4, 8, 16, 32 y 64).
 2. Pulsa el objeto.
 
 El becario hace el resto:
 
-- Calcula la **receta completa** y los materiales que le faltan.
-- **Los consigue él solo**: tala, mina, funde minerales en un horno, etc.
-- Si hace falta, **coloca una mesa de trabajo o un horno** y fabrica.
-- Cuando acaba, te lo dice y se queda con el objeto en su inventario (pídelo con **Dame todo**).
+- 🧮 Calcula la **receta completa** y los materiales que le faltan.
+- 🪵 **Los consigue él solo**: tala, mina, funde minerales en un horno…
+- 🔥 Si hace falta, **coloca una mesa de trabajo o un horno** y fabrica.
+- 🎁 Cuando acaba, te lo dice y se queda con el objeto (pídelo con **Dame todo**).
 
-Si el becario es **jefe de Fabricación**, reparte el encargo entre los miembros de su equipo.
+> [!NOTE]
+> Si el becario es **jefe de Fabricación**, reparte el encargo entre los miembros de su equipo.
 
 ---
 
@@ -165,9 +191,9 @@ Desde **Construir** eliges una obra. Se levanta **delante de ti y mirando hacia 
 
 | Obra | Tamaño / contenido |
 |---|---|
-| Casa pequeña | 5 × 5 |
-| Casa grande | 7 × 7 |
-| Portal al Nether | Marco de obsidiana y encendido |
+| 🏠 Casa pequeña | 5 × 5 |
+| 🏡 Casa grande | 7 × 7 |
+| 🌀 Portal al Nether | Marco de obsidiana y encendido |
 
 El becario **junta él mismo los materiales** (piedra, madera, puerta, antorcha; obsidiana y mechero para el portal) y luego construye.
 
@@ -179,16 +205,16 @@ Menú **Combate**:
 
 | Modo | Comportamiento |
 |---|---|
-| **Pasivo** | No ataca. |
-| **Defensa** | Te defiende y ataca a lo que tú golpeas o a lo que te ataca. |
-| **Escolta** | Como Defensa, y además ataca a cualquier monstruo que vea dentro de un radio a tu alrededor. |
-| **Guardia** | Protege una **zona fija** y no se mueve de ella. |
+| 🕊️ **Pasivo** | No ataca. |
+| 🛡️ **Defensa** | Te defiende y ataca a lo que tú golpeas o a lo que te ataca. |
+| 👁️ **Escolta** | Como Defensa, y además ataca a cualquier monstruo que vea dentro de un radio a tu alrededor. |
+| 🏰 **Guardia** | Protege una **zona fija** y no se mueve de ella. |
 
-Además, sea cual sea el modo:
+Sea cual sea el modo:
 
-- Se **equipa la mejor arma** que lleve.
-- Se **cubre con el escudo** (si tiene uno) ante flechas, golpes y explosiones: creepers a punto de explotar y TNT encendido.
-- **Come** cuando está herido, si lleva comida.
+- ⚔️ Se **equipa la mejor arma** que lleve.
+- 🛡️ Se **cubre con el escudo** (si tiene uno) ante flechas, golpes y explosiones: creepers a punto de explotar y TNT encendido.
+- 🍖 **Come** cuando está herido, si lleva comida.
 
 ---
 
@@ -198,10 +224,10 @@ Un becario puede ser **jefe** de un área y tener a otros en su **equipo**. Se g
 
 | Cargo | Qué hace el jefe |
 |---|---|
-| **Minería** | Reparte entre su equipo las órdenes de minar. |
-| **Tala** | Reparte entre su equipo las órdenes de talar. |
-| **Fabricación** | Reparte los encargos de fabricar. |
-| **Guardia** | Pone a todo su equipo en su mismo modo de combate; en modo guardia, cada uno ocupa un punto distinto de la zona. |
+| ⛏️ **Minería** | Reparte entre su equipo las órdenes de minar. |
+| 🌲 **Tala** | Reparte entre su equipo las órdenes de talar. |
+| 🔨 **Fabricación** | Reparte los encargos de fabricar. |
+| 🏰 **Guardia** | Pone a todo su equipo en su mismo modo de combate; en modo guardia, cada uno ocupa un punto distinto de la zona. |
 
 Cómo se usa:
 
@@ -227,25 +253,28 @@ Si cruzas un portal del Nether estando el becario cerca y **sin trabajo**, **va 
 
 ## Inventario, objetos y brújula
 
-- Cada becario tiene su propio **inventario** (ábrelo desde su menú o con `/becario inventario`).
-- **Darle algo:** *Mayús + clic derecho* con el objeto en la mano, o **tirárselo** (tecla Q) estando cerca.
-- **Recibir lo que lleva:** **Dame todo**.
-- **Brújula:** desde el panel te da una brújula que **siempre apunta al becario**, útil si se ha ido lejos a minar.
+- 🎒 Cada becario tiene su propio **inventario** (ábrelo desde su menú o con `/becario inventario`).
+- 🤲 **Darle algo:** *Mayús + clic derecho* con el objeto en la mano, o **tirárselo** (tecla Q) estando cerca.
+- 🎁 **Recibir lo que lleva:** **Dame todo**.
+- 🧭 **Brújula:** desde el panel te da una brújula que **siempre apunta al becario**, útil si se ha ido lejos a minar.
 
 ---
 
 ## Si muere, si se atasca
 
-- **Si muere**, deja **todo lo que llevaba** (inventario y equipo) en un **cofre** donde cayó, y te envía un mensaje con las **coordenadas y la dimensión**. Si no cabe todo en un cofre, usa un segundo cofre encima; lo que sobre cae al suelo. El cofre nunca se pone sobre lava ni por debajo del mundo.
-- **Si se queda encerrado** dentro de un bloque, **pica para salir** (no rompe obsidiana ni bloques irrompibles).
-- Si no encuentra camino hasta ti, te avisa en lugar de teletransportarse.
-- Si vuelas o estás en el aire sobre un hueco, **espera** en el borde en vez de tirarse detrás de ti.
+- 🪦 **Si muere**, deja **todo lo que llevaba** (inventario y equipo) en un **cofre** donde cayó, y te envía un mensaje con las **coordenadas y la dimensión**. Si no cabe todo en un cofre, usa un segundo cofre encima; lo que sobre cae al suelo. El cofre nunca se pone sobre lava ni por debajo del mundo.
+- 🧱 **Si se queda encerrado** dentro de un bloque, **pica para salir** (no rompe obsidiana ni bloques irrompibles).
+- 🗺️ Si no encuentra camino hasta ti, te avisa en lugar de teletransportarse.
+- 🕳️ Si vuelas o estás en el aire sobre un hueco, **espera** en el borde en vez de tirarse detrás de ti.
 
 ---
 
 ## Comandos
 
 Todo se puede hacer con las pantallas, pero existen comandos `/becario …` (útiles para scripts o servidores).
+
+<details>
+<summary><b>Ver lista de comandos</b></summary>
 
 | Comando | Para qué |
 |---|---|
@@ -263,6 +292,8 @@ Todo se puede hacer con las pantallas, pero existen comandos `/becario …` (út
 | `peticion aceptar` · `rechazar` | Responder a la petición de un jefe. |
 | `despedir` | Despide al becario elegido. |
 
+</details>
+
 ---
 
 ## Preguntas frecuentes
@@ -273,27 +304,52 @@ Si en tu instancia hay otro mod que también usa la **B** (por ejemplo, uno de b
 
 1. Entra en *Opciones → Controles → **Teclas…***
 2. Busca la categoría **Becarios de Notch** (o escribe "becario" en el buscador).
-3. Pulsa el botón de **Panel de becarios** y presiona la tecla que quieras (una que no uses para nada más; las que están en conflicto se marcan en rojo).
+3. Pulsa el botón de **Panel de becarios** y presiona la tecla que quieras. Elige una que no uses para nada más; las que están en conflicto se marcan en rojo.
 
-Mientras tanto, puedes abrir el mismo panel con **clic derecho sobre una Oficina**.
+> [!TIP]
+> Mientras tanto, puedes abrir el mismo panel con **clic derecho sobre una Oficina**.
 
-**¿Un becario puede teletransportarse hasta mí?**
+<details>
+<summary><b>¿Un becario puede teletransportarse hasta mí?</b></summary>
+
 No. Siempre viene andando. Si no encuentra camino, te avisa.
 
-**¿Mis becarios pueden hacerle caso a otro jugador?**
+</details>
+
+<details>
+<summary><b>¿Pueden hacerle caso a otro jugador?</b></summary>
+
 No. Solo obedecen a su dueño.
 
-**¿Qué pasa si me desconecto?**
+</details>
+
+<details>
+<summary><b>¿Qué pasa si me desconecto?</b></summary>
+
 Tus becarios se guardan con el mundo y siguen asignados a ti cuando vuelvas.
 
-**¿Por qué no puedo entrar al servidor?**
+</details>
+
+<details>
+<summary><b>¿Por qué no puedo entrar al servidor?</b></summary>
+
 Casi siempre es porque el jar del cliente y el del servidor no son la misma versión, o falta Fabric API. Instala el mismo jar en los dos.
 
-**Mi becario no encuentra el mineral que le pido.**
+</details>
+
+<details>
+<summary><b>Mi becario no encuentra el mineral que le pido</b></summary>
+
 Sale de expedición bajando y abriendo túneles. Si lleva mucho rato sin éxito, pídele que pare y llévalo a una zona donde haya ese material.
 
-**¿Puedo añadir mis propias skins?**
+</details>
+
+<details>
+<summary><b>¿Puedo añadir mis propias skins?</b></summary>
+
 Sí, al compilar: pon un PNG de 64×64 en la carpeta `skins/` y compila. Aparece en la lista al contratar. El catálogo va dentro del jar, así que servidor y clientes deben tener el mismo.
+
+</details>
 
 ---
 
@@ -307,7 +363,10 @@ Proyecto Fabric con **Loom** (Mojang mappings), Gradle 9.7 y Java 25.
 ./gradlew runServer    # servidor de pruebas
 ```
 
-Estructura principal (`src/main/java/com/jorgesox/becarios/`):
+<details>
+<summary><b>Estructura del código</b></summary>
+
+Código principal en `src/main/java/com/jorgesox/becarios/`:
 
 | Paquete | Contenido |
 |---|---|
@@ -320,6 +379,8 @@ Estructura principal (`src/main/java/com/jorgesox/becarios/`):
 | `block` / `menu` | Bloque Oficina e inventario del becario. |
 
 El código de cliente (pantallas, tecla B) está en `src/client/`.
+
+</details>
 
 ---
 
